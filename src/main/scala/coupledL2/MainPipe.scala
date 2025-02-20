@@ -494,9 +494,11 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
 
   // This is to let io.toDS.req_s3.valid hold for 2 cycles (see DataStorage for details)
   val task_s3_valid_hold2 = RegEnable(task_s2.valid, false.B, !RegNext(task_s2.valid, false.B))
+  val ds_en = task_s3.valid && (ren || wen)
+  val ds_valid = if (enableMCP2) task_s3_valid_hold2 && (ren || wen) else task_s3.valid && (ren || wen)
 
-  io.toDS.en_s3 := task_s3.valid && (ren || wen)
-  io.toDS.req_s3.valid := task_s3_valid_hold2 && (ren || wen)
+  io.toDS.en_s3 := ds_en
+  io.toDS.req_s3.valid := ds_valid
   io.toDS.req_s3.bits.way := Mux(
     mshr_refill_s3 && req_s3.replTask,
     io.replResp.bits.way,
