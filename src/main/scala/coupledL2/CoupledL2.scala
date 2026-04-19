@@ -43,6 +43,7 @@ trait HasCoupledL2Parameters {
   val p: Parameters
   def enableClockGate = p(EnableL2ClockGate)
   def cacheParams = p(L2ParamKey)
+  def enableMatrix = p(EnableMatrix)
   def PrivateClintRange = cacheParams.PrivateClintRange
 
   def XLEN = 64
