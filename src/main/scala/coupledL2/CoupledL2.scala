@@ -298,7 +298,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     beatBytes = 32,
     minLatency = 2,
     responseFields = cacheParams.respField,
-    requestKeys = cacheParams.reqKey,
+    requestKeys = cacheParams.fullReqKey,
     endSinkId = idsAll * (1 << bankBits)
   )
   val managerNode = TLManagerNode(Seq(managerParameters))
@@ -326,7 +326,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     beatBytes = 32,
     minLatency = 2,
     responseFields = cacheParams.respField,
-    requestKeys = cacheParams.reqKey,
+    requestKeys = cacheParams.fullReqKey,
     endSinkId = idsAll
   )
 
@@ -376,6 +376,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       val pfCtrlFromCore = Input(new PrefetchCtrlFromCore)
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint()(l2ECCParams))
+      val matrixDataOut = Option.when(enableMatrix)(Vec(banks, DecoupledIO(new MatrixDataBundle())))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -544,6 +545,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         }
         in.b.bits.address := restoreAddress(slice.io.in.b.bits.address, i)
         slice.io.sliceId := i.U
+        if (enableMatrix) io.matrixDataOut.get(i) <> slice.io.matrixDataOut.get
 
         slice.io.error.ready := enableECC.asBool // TODO: fix the datapath as optional
 

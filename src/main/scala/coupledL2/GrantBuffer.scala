@@ -65,6 +65,9 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     val d = DecoupledIO(new TLBundleD(edgeIn.bundle))
     val e = Flipped(DecoupledIO(new TLBundleE(edgeIn.bundle)))
 
+    // response to Matrix Unit
+    val matrixDataOut = Option.when(enableMatrix)(DecoupledIO(new MatrixDataBundle()))
+
     // for MainPipe entrance blocking
     val fromReqArb = Input(new Bundle() {
       val status_s1 = new PipeEntranceStatus
@@ -218,6 +221,26 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
    // toTLBundleD(deqTask, deqData(0).data, deqId)
     toTLBundleD(deqTask, Mux(deqTask.isKeyword.getOrElse(false.B),deqData(1).data,deqData(0).data), deqId)
   )
+
+  // Matrix response path (conditional)
+  if (enableMatrix) {
+    val toMatrix = deqTask.matrixTask.getOrElse(false.B) && deqTask.opcode === AccessAckData
+    when (toMatrix) {
+      grantQueue.io.deq.ready := io.matrixDataOut.get.ready
+      grantQueueData0.io.deq.ready := io.matrixDataOut.get.ready
+      grantQueueData1.io.deq.ready := io.matrixDataOut.get.ready
+
+      io.d.valid := false.B
+      io.d.bits := DontCare
+      io.matrixDataOut.get.valid := deqValid
+      io.matrixDataOut.get.bits.sourceId := deqTask.ameIndex.getOrElse(0.U)
+      io.matrixDataOut.get.bits.channel := deqTask.ameChannel.getOrElse(0.U)
+      io.matrixDataOut.get.bits.data := deqData.asTypeOf(new DSBlock)
+    }.otherwise {
+      io.matrixDataOut.get.valid := false.B
+      io.matrixDataOut.get.bits := DontCare
+    }
+  }
 
 
   XSPerfAccumulate("toTLBundleD_valid", deqValid)
