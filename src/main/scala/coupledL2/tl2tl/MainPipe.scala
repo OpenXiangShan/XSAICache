@@ -56,6 +56,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     /* get dir result at stage 3 */
     val dirResp_s3 = Input(new DirResult)
     val replResp = Flipped(ValidIO(new ReplacerResult))
+    val retryFastFwd_s2 = Input(Bool())
 
     /* send task to MSHRCtl at stage 3 */
     val toMSHRCtl = new Bundle() {
@@ -99,7 +100,7 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
     val nestedwbData = Output(new DSBlock)
 
     /* send Hint to L1 */
-    val l1Hint = DecoupledIO(new L2ToL1Hint())
+    val l1Hint = DecoupledIO(new L2ToL1HintInsideL2())
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -545,7 +546,8 @@ class MainPipe(implicit p: Parameters) extends L2Module with HasPerfEvents {
 
   customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
   customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
-  
+  customL1Hint.io.retry_s2 := io.retryFastFwd_s2
+
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
