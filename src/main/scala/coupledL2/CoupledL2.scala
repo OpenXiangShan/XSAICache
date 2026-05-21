@@ -298,7 +298,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     beatBytes = 32,
     minLatency = 2,
     responseFields = cacheParams.respField,
-    requestKeys = cacheParams.fullReqKey,
+    requestKeys = cacheParams.fullReqKey(enableMatrix),
     endSinkId = idsAll * (1 << bankBits)
   )
   val managerNode = TLManagerNode(Seq(managerParameters))
@@ -326,7 +326,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     beatBytes = 32,
     minLatency = 2,
     responseFields = cacheParams.respField,
-    requestKeys = cacheParams.fullReqKey,
+    requestKeys = cacheParams.fullReqKey(enableMatrix),
     endSinkId = idsAll
   )
 

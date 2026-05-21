@@ -1,6 +1,7 @@
 ISSUE ?= B
 NUM_CORE ?= 2
 NUM_TL_UL ?= 0
+NUM_M_AGENT ?= 1
 NUM_SLICE ?= 4
 WITH_CHISELDB ?= 1
 WITH_TLLOG ?= 1
@@ -25,6 +26,9 @@ TOP = TestTop
 CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $(NUM_SLICE) \
 		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) --chilog $(WITH_CHILOG) \
 			   --etime $(BY_ETIME) --vtime $(BY_VTIME) \
+		       --fpga $(FPGA)
+MATRIX_TOP_ARGS = --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --m-agent $(NUM_M_AGENT) --bank $(NUM_SLICE) \
+		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) \
 		       --fpga $(FPGA)
 BUILD_DIR_L2 = ./build/coupledl2
 BUILD_DIR_LLC = ./build/openllc
@@ -61,6 +65,9 @@ test-top-l3-openllc:
 
 test-top-l2l3-openllc:
 	mill -i XSCache.test.runMain xscache.openLLC.TestTopSoC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+
+test-top-matrix:
+	mill -i XSCache.test.runMain xscache.openLLC.TestTopMatrix -td $(BUILD_DIR_LLC) $(MATRIX_TOP_ARGS) --target systemverilog --split-verilog
 
 test-top-l2l3l2-openllc:
 	mill -i XSCache.test.runMain xscache.openLLC.TestTopSoC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
