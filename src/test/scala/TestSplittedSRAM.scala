@@ -1,6 +1,6 @@
-package coupledL2
+package xscache.coupledL2
 
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
@@ -79,5 +79,5 @@ object TestSplittedSRAM extends App with ChiselSim {
 /*
 # To build a signle test Module
 mill:
-	mill -i CoupledL2.test.runMain coupledL2.TestSplittedSRAM
+	mill -i CoupledL2.test.runMain xscache.coupledL2.TestSplittedSRAM
 */

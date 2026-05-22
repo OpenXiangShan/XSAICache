@@ -15,14 +15,14 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.utils.{SRAMTemplate, ReplacementPolicy}
-import coupledL2.tl2chi.HasCHIOpcodes
+import xscache.coupledL2.utils.{SRAMTemplate, ReplacementPolicy}
 import utility.{ParallelPriorityMux}
+import xscache.chi.HasCHIOpcodes
 
 trait HasClientInfo { this: HasOpenLLCParameters =>
   def clientCacheParams = cacheParams.clientCaches

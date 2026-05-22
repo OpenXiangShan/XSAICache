@@ -15,12 +15,12 @@
   * *************************************************************************************
   */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi._
+import xscache.chi._
 
 class DownwardsNoSnpLinkIO(implicit p: Parameters) extends Bundle with HasLinkSwitch {
   val req = ChannelIO(new CHIREQ)

@@ -1,6 +1,6 @@
 package cache
 
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 import chisel3._
 import chisel3.util._
 import chisel3.experimental._
@@ -9,7 +9,7 @@ import chisel3.simulator.HasSimulator
 import svsim.verilator.Backend.CompilationSettings.TraceStyle
 import svsim.verilator.Backend.CompilationSettings.TraceKind
 
-import coupledL2.utils.PseudoLRU
+import xscache.coupledL2.utils.PseudoLRU
 import freechips.rocketchip.util.UIntToAugmentedUInt
 
 class PLRU(way: Int) extends Module {

@@ -15,12 +15,12 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIDAT
+import xscache.chi.CHIDAT
 
 class TXDAT (implicit p: Parameters) extends LLCModule {
   val io = IO(new Bundle() {

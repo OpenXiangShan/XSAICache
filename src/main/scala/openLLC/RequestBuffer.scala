@@ -15,13 +15,13 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.HasCHIOpcodes
 import utility.{FastArbiter}
+import xscache.chi.HasCHIOpcodes
 
 class RequestBuffer(entries: Int = 8)(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {

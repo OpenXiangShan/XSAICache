@@ -15,15 +15,15 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.diplomacy.AddressSet
-import coupledL2.tl2chi._
 import scala.collection.mutable.{Map}
 import utility.{FastArbiter}
+import xscache.chi._
 
 object TargetBinder {
   def route(in: PortIO, map: Map[AddressSet, Int])(implicit p: Parameters): Map[Int, PortIO] = {

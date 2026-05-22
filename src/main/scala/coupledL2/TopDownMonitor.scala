@@ -14,13 +14,13 @@
   * See the Mulan PSL v2 for more details.
   ***************************************************************************************/
 
-package coupledL2
+package xscache.coupledL2
 
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import coupledL2.prefetch.PfSource
-import coupledL2.utils._
+import xscache.coupledL2.prefetch.PfSource
+import xscache.coupledL2.utils._
 import utility._
 
 class PfStatInMSHRBundle()(implicit p: Parameters) extends L2Bundle {

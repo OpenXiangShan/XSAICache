@@ -15,12 +15,12 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi.CHIREQ
+import xscache.chi.CHIREQ
 
 // receive task from upwards and convert to inner task
 class RXREQ (implicit p: Parameters) extends LLCModule {
@@ -61,7 +61,7 @@ class RXREQ (implicit p: Parameters) extends LLCModule {
     task.size := r.size
     task.refillTask := false.B
     task.reqID := Cat(0.U(1.W), bank, id_pool)
-    // this follows coupledL2.tl2chi.TaskBundle.toCHIReqBundle
+    // this follows TaskBundle.toCHIReqBundle
     task.tgtID := r.tgtID
     task.srcID := r.srcID
     task.txnID := r.txnID

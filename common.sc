@@ -7,9 +7,7 @@ trait XSCacheModule extends ScalaModule {
 
   def utilityModule: ScalaModule
 
-  def huancunModule: ScalaModule
-
   def openNCBModule: ScalaModule
 
-  override def moduleDeps = super.moduleDeps ++ Seq(rocketModule, utilityModule, huancunModule, openNCBModule)
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketModule, utilityModule, openNCBModule)
 }

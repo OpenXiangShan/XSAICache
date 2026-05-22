@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util.log2Ceil
@@ -23,11 +23,10 @@ import freechips.rocketchip.diplomacy.{AddressSet, BufferParams}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.Field
-import huancun.{AliasKey, CacheParameters, IsHitKey, PrefetchKey}
-import coupledL2.prefetch._
+import xscache.coupledL2.prefetch._
 import utility.{Code, MemReqSource, ReqSourceKey}
+import xscache.common.{AliasKey, CacheParameters, IsHitKey, PrefetchKey, BankBitsKey}
 
-case object EnableCHI extends Field[Boolean](false)
 case object EnableL2ClockGate extends Field[Boolean](true)
 
 // L1 Cache Params, used for TestTop generation
@@ -160,8 +159,6 @@ case object L2ParamKey extends Field[L2Param](L2Param())
 case object EdgeInKey extends Field[TLEdgeIn]
 
 case object EdgeOutKey extends Field[TLEdgeOut]
-
-case object BankBitsKey extends Field[Int]
 
 case object L2NBanksKey extends Field[Int]
 

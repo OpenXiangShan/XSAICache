@@ -15,11 +15,11 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils.GatedSplittedSRAM
+import xscache.coupledL2.utils.GatedSplittedSRAM
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
 

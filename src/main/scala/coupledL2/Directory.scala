@@ -15,16 +15,16 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
 import utility.mbist.MbistPipeline
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 import utility.{ChiselDB, Code, MemReqSource, ParallelPriorityMux, RegNextN, XSPerfAccumulate, MaskToOH}
 import utility.sram.SRAMTemplate
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.prefetch.PfSource
+import xscache.coupledL2.prefetch.PfSource
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.util.SeqToAugmentedSeq
 

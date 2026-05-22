@@ -15,14 +15,14 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLBundle
 import utility._
-import coupledL2.prefetch._
+import xscache.coupledL2.prefetch._
 
 trait BaseOuterBundle
 

@@ -15,13 +15,13 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import coupledL2.tl2chi._
 import utility.{XSPerfAccumulate}
+import xscache.chi.HasCHIOpcodes
 
 class TopDownMonitor()(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val io = IO(new Bundle() {
@@ -53,4 +53,3 @@ class TopDownMonitor()(implicit p: Parameters) extends LLCModule with HasCHIOpco
     XSPerfAccumulate(s"${cacheParams.name}MissMatch_${hartId}", addrMatch)
   }
 }
-

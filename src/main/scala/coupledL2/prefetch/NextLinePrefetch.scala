@@ -15,13 +15,13 @@
  * *************************************************************************************
  */
 
-package coupledL2.prefetch
+package xscache.coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.HasCoupledL2Parameters
-import coupledL2.utils.{OverwriteQueue, ReplacementPolicy, SetAssocReplacer}
+import xscache.coupledL2.HasCoupledL2Parameters
+import xscache.coupledL2.utils.{OverwriteQueue, ReplacementPolicy, SetAssocReplacer}
 import utility.{ChiselDB, MemReqSource, XSPerfAccumulate, XSPerfHistogram}
 
 // Next-Line Prefetcher base parameters
@@ -69,7 +69,7 @@ trait HasNLParams extends HasCoupledL2Parameters {
   }.get.asInstanceOf[NLParameters]
   def L2SliceNum: Int = {
     try {
-      val nb = p(coupledL2.L2NBanksKey)
+      val nb = p(xscache.coupledL2.L2NBanksKey)
       if (nb > 0) nb else nlParams.L2SliceNum
     } catch {
       case _: Throwable => nlParams.L2SliceNum

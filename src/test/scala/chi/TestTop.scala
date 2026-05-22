@@ -1,19 +1,21 @@
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import circt.stage.ChiselStage
+import circt.stage.FirtoolOption
 import chisel3.util._
 import org.chipsalliance.cde.config._
 import chisel3.stage.ChiselGeneratorAnnotation
 import freechips.rocketchip.diplomacy._
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tile.MaxHartIdBits
-import huancun._
-import coupledL2.prefetch._
-import coupledL2.tl2chi._
+import xscache.coupledL2.prefetch._
+import xscache.coupledL2._
 import utility._
 import utility.chiron._
+import xscache.common.{AliasField, BankBitsKey, PrefetchField}
 import scala.collection.mutable.ArrayBuffer
+import xscache.chi._
 
 class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, extTime: Boolean = false, vTime: Boolean = false)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
@@ -70,14 +72,12 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
     }
   }
 
-  // val l2 = LazyModule(new TL2CHICoupledL2())
-  val l2_nodes = (0 until numCores).map(i => LazyModule(new TL2CHICoupledL2()(new Config((site, here, up) => {
+  val l2_nodes = (0 until numCores).map(i => LazyModule(new CoupledL2()(new Config((site, here, up) => {
     case L2ParamKey => cacheParams.copy(
       name                = s"L2_$i",
       hartId              = i,
     )
     case CHIIssue => p(CHIIssue)
-    case EnableCHI => p(EnableCHI)
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -180,18 +180,18 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
           vTime = vTime,
           clock = l2.module.clock,
           reset = l2.module.reset,
-          rnId  = l2.module.io_nodeID,
-          txreqflit = l2.module.io_chi.tx.req.flit, txreqflitv = l2.module.io_chi.tx.req.flitv,
-          rxrspflit = l2.module.io_chi.rx.rsp.flit, rxrspflitv = l2.module.io_chi.rx.rsp.flitv,
-          rxdatflit = l2.module.io_chi.rx.dat.flit, rxdatflitv = l2.module.io_chi.rx.dat.flitv,
-          rxsnpflit = l2.module.io_chi.rx.snp.flit, rxsnpflitv = l2.module.io_chi.rx.snp.flitv,
-          txrspflit = l2.module.io_chi.tx.rsp.flit, txrspflitv = l2.module.io_chi.tx.rsp.flitv,
-          txdatflit = l2.module.io_chi.tx.dat.flit, txdatflitv = l2.module.io_chi.tx.dat.flitv,
+          rnId  = l2.module.io.nodeID,
+          txreqflit = l2.module.io.chi.tx.req.flit, txreqflitv = l2.module.io.chi.tx.req.flitv,
+          rxrspflit = l2.module.io.chi.rx.rsp.flit, rxrspflitv = l2.module.io.chi.rx.rsp.flitv,
+          rxdatflit = l2.module.io.chi.rx.dat.flit, rxdatflitv = l2.module.io.chi.rx.dat.flitv,
+          rxsnpflit = l2.module.io.chi.rx.snp.flit, rxsnpflitv = l2.module.io.chi.rx.snp.flitv,
+          txrspflit = l2.module.io.chi.tx.rsp.flit, txrspflitv = l2.module.io.chi.tx.rsp.flitv,
+          txdatflit = l2.module.io.chi.tx.dat.flit, txdatflitv = l2.module.io.chi.tx.dat.flitv,
           time = time_sim, timev = extTime.B
         )
       }
       
-      l2.module.io_chi <> io(i).chi
+      l2.module.io.chi <> io(i).chi
 
       l2.module.io.l2_hint <> io_l1(i).l2Hint
 
@@ -199,7 +199,7 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
 
       l2.module.io.hartId := i.U
       l2.module.io.pfCtrlFromCore := DontCare
-      l2.module.io_nodeID := io(i).nodeId
+      l2.module.io.nodeID := io(i).nodeId
       l2.module.io.debugTopDown := DontCare
       l2.module.io.l2_tlb_req <> DontCare
     }
@@ -246,7 +246,6 @@ object TestTopCHIHelper {
         sam                 = Seq(AddressSet.everything -> 0)
       )
       case CHIIssue => issue
-      case EnableCHI => true
     })
 
     CLogB.init(true)
@@ -255,9 +254,11 @@ object TestTopCHIHelper {
 
     val top = DisableMonitors(p => LazyModule(fTop(p)))(config)
 
-    (new ChiselStage).execute(args,
-      ChiselGeneratorAnnotation(() => top.module) +: TestTopFirtoolOptions()
-    )
+    (new ChiselStage).execute(args, Seq(
+      ChiselGeneratorAnnotation(() => top.module),
+      FirtoolOption("--disable-annotation-unknown"),
+      FirtoolOption("--default-layer-specialization=enable")
+    ))
 
     ChiselDB.addToFileRegisters
     FileRegisters.write("./build")

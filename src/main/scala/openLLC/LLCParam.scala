@@ -15,15 +15,15 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config.{Field, Parameters}
-import coupledL2.L2Param
-import huancun.CacheParameters
+import xscache.coupledL2.L2Param
 import utility.ZeroExt
+import xscache.common.CacheParameters
 
 case class ResourceConfig(refill: Int, response: Int, snoop: Int, memory: Int)
 

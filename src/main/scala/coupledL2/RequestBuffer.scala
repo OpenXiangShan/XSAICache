@@ -15,16 +15,16 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import chisel3._
 import chisel3.util._
-import coupledL2._
-import coupledL2.prefetch._
-import coupledL2.utils._
+import xscache.coupledL2._
+import xscache.coupledL2.prefetch._
+import xscache.coupledL2.utils._
 import utility._
 
 class ReqEntry(entries: Int = 4)(implicit p: Parameters) extends L2Bundle() {

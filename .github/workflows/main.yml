@@ -27,8 +27,6 @@ jobs:
           fetch-depth: '0'
       - name: check rocket-chip
         run: cd rocket-chip && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
-      - name: check HuanCun
-        run: cd HuanCun && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
       - name: check utility
         run: cd utility && git fetch --all && git merge-base --is-ancestor `git rev-parse HEAD` origin/master
 
@@ -87,15 +85,14 @@ jobs:
       run: tar -zcf ${{ env.VERILATOR_ARCHIVE }} verilator
 
   # This workflow contains a single job called "build"
-  tl-test_L2:
+  chi-test_L2:
     # The type of runner that the job will run on
     runs-on: ubuntu-22.04
 
     # Environments
     env:
-      RUN_ARCHIVE: coupledL2-tl-test-new-run-${{ github.sha }}
-      RUN_ARCHIVE_TL: coupledL2-tl-test-new-run-${{ github.sha }}-tilelink.tar.gz
-      RUN_ARCHIVE_CHI: coupledL2-tl-test-new-run-${{ github.sha }}-chi.tar.gz
+      RUN_ARCHIVE: xscache-chi-test-run-${{ github.sha }}
+      RUN_ARCHIVE_CHI: xscache-chi-test-run-${{ github.sha }}.tar.gz
       VERILATOR_ARCHIVE: verilator-ubuntu-22.04-clang-17.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -187,24 +184,6 @@ jobs:
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
       
-      # Clean artifacts folder (./tl-test-new/run) after successful run
-      - name: Unit Test for TileLink version
-        run: |
-            rm -rf tl-test-new
-            git clone https://github.com/OpenXiangShan/tl-test-new
-            cd ./tl-test-new
-            git checkout ${{ env.TL_TEST_NEW_COMMIT }}
-            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
-            rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
-            make coupledL2-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
-            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
-
-      - name: Tar up artifacts of Unit Test for TileLink version
-        if: always()
-        run: |
-            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE_TL }} ./tl-test-new/run
-
       - name: Upload artifacts of Unit Test
         if: always()
         uses: actions/upload-artifact@v4

@@ -15,7 +15,7 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
@@ -23,9 +23,9 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
-import coupledL2.prefetch.PrefetchReq
-import huancun.{AliasKey, PrefetchKey}
+import xscache.coupledL2.prefetch.PrefetchReq
 import utility.{MemReqSource, XSPerfAccumulate}
+import xscache.common.{AliasKey, PrefetchKey}
 
 class SinkA(implicit p: Parameters) extends L2Module {
   val io = IO(new Bundle() {
@@ -158,7 +158,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
    4. if cacheline is VALID, after cmo flush, Mainpipe send back resp    |  io.cmoAll.cmoLineDone
    5. if cacheline is INVALID, MainPipe drop it and send back resp       |  io.cmoAll.cmoLineDone
    6. after all slices is flushed, inform Core                           |  io.cmoAll.l2FlushDone 
-   7. after all slices is flushed, exit coherency                        |  TL2CHICoupledL2.io_chi.syscoreq
+   7. after all slices is flushed, exit coherency                        |  CoupledL2.io_chi.syscoreq
    ---------------------------------------------------------------------------------------------------------*/
   val l2Flush = io.cmoAll.map(_.l2Flush).getOrElse(false.B)
   val mshrValid = io.cmoAll.map(_.mshrValid).getOrElse(false.B)

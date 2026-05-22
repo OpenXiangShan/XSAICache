@@ -15,14 +15,14 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLMessages._
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 
 class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val source = UInt(sourceIdBits.W)

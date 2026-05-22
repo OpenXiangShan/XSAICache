@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
@@ -23,11 +23,11 @@ import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.amba.axi4.AXI4Parameters._
 import freechips.rocketchip.diplomacy._
 import org.chipsalliance.cde.config._
-import coupledL2.L2ParamKey
-import coupledL2.tl2chi._
+import xscache.coupledL2.L2ParamKey
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.axi._
 import cc.xiangshan.openncb.chi._
+import xscache.chi._
 
 class OpenNCB(implicit p: Parameters) extends LazyModule with HasOpenLLCParameters {
   val ncbParams = p(NCBParametersKey)

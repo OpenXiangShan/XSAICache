@@ -16,11 +16,11 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.Parameters
 import utility._
@@ -59,7 +59,7 @@ class SourceB(implicit p: Parameters) extends L2Module {
     b.source  := dcacheSourceIdStart
     b.address := Cat(task.tag, task.set, 0.U(offsetBits.W))
     b.mask    := Fill(beatBytes, 1.U(1.W))
-    b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W)) // this is the same as HuanCun
+    b.data    := Cat(task.alias.getOrElse(0.U), 0.U(1.W))
     b.corrupt := false.B
     b
   }

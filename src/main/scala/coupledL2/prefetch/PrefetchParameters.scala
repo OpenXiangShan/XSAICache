@@ -15,12 +15,12 @@
  * *************************************************************************************
  */
 
-package coupledL2.prefetch
+package xscache.coupledL2.prefetch
 
 import org.chipsalliance.cde.config.Parameters
 import chisel3._
 import chisel3.util._
-import coupledL2._
+import xscache.coupledL2._
 import utility.MemReqSource
 
 trait PrefetchParameters {

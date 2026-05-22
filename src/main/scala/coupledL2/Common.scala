@@ -15,14 +15,14 @@
   * *************************************************************************************
   */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
-import tl2chi.{HasCHIMsgParameters, HasCHIChannelBits, CHIREQ, MemAttr, OrderEncodings, MPAM}
+import xscache.chi.{CHIREQ, HasCHIMsgParameters, MemAttr, MPAM, OrderEncodings}
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
@@ -91,7 +91,6 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
                                           // If true, MSHR should send an ack to L2 prefetcher.
   val needHint = prefetchOpt.map(_ => Bool())
 
-  // For DirtyKey in Release
   val dirty = Bool()
 
   // if this is an mshr task and it needs to write dir

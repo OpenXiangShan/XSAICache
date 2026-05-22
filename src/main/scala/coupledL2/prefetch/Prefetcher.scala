@@ -15,15 +15,15 @@
   * *************************************************************************************
   */
 
-package coupledL2.prefetch
+package xscache.coupledL2.prefetch
 
 import chisel3._
 import chisel3.util._
 import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
-import coupledL2._
-import coupledL2.utils.OverwriteQueue
+import xscache.coupledL2._
+import xscache.coupledL2.utils.OverwriteQueue
 
 /* virtual address */
 trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {

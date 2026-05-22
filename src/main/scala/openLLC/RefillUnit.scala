@@ -15,14 +15,14 @@
  * *************************************************************************************
  */
 
-package openLLC
+package xscache.openLLC
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.tl2chi._
-import coupledL2.tl2chi.CHICohStates._
 import utility.{FastArbiter}
+import xscache.chi._
+import xscache.chi.CHICohStates._
 
 class RefillBufRead(implicit p: Parameters) extends LLCBundle {
   val id = Output(UInt(log2Ceil(mshrs.refill).W))

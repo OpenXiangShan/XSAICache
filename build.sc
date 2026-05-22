@@ -81,13 +81,6 @@ object utility extends HasChisel {
   )
 }
 
-object huancun extends HasChisel {
-  override def millSourcePath = pwd / "HuanCun"
-  override def moduleDeps = super.moduleDeps ++ Seq(
-    rocketchip, utility
-  )
-}
-
 object openNCB extends HasChisel {
   override def millSourcePath = pwd / "OpenNCB"
   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip)
@@ -100,8 +93,6 @@ object XSCache extends HasChisel with $file.common.XSCacheModule {
   def rocketModule: ScalaModule = rocketchip
 
   def utilityModule: ScalaModule = utility
-
-  def huancunModule: ScalaModule = huancun
 
   def openNCBModule: ScalaModule = openNCB
 

@@ -18,12 +18,12 @@
 
 // See LICENSE.SiFive for license details.
 
-package coupledL2.utils
+package xscache.coupledL2.utils
 
 import chisel3._
 import chisel3.util._
 import freechips.rocketchip.tilelink.LFSR64
-import huancun.utils.CustomAnnotations
+import xscache.common.CustomAnnotations
 
 object HoldUnless {
   def apply[T <: Data](x: T, en: Bool): T = Mux(en, x, RegEnable(x, 0.U.asTypeOf(x), en))

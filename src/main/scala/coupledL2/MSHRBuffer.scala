@@ -15,12 +15,12 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
 import org.chipsalliance.cde.config.Parameters
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 
 class MSHRBufRead(implicit p: Parameters) extends L2Bundle {
   val id = Output(UInt(mshrBits.W))

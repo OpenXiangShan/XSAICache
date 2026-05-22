@@ -17,7 +17,7 @@
 
 // See LICENSE.SiFive for license details.
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
@@ -30,16 +30,17 @@ import freechips.rocketchip.util._
 import org.chipsalliance.cde.config.{Field, Parameters}
 
 import scala.math.max
-import coupledL2.prefetch._
-import huancun.{BankBitsKey, TPmetaReq, TPmetaResp}
+import xscache.coupledL2.prefetch._
+import xscache.coupledL2.prefetch.{TPmetaReq, TPmetaResp}
 import utility.mbist.{MbistInterface, MbistPipeline}
 import utility.sram.{SramBroadcastBundle, SramHelper}
 import freechips.rocketchip.tilelink.TLArbiter
+import xscache.coupledL2.utils._
+import xscache.common.BankBitsKey
+import xscache.chi._
 
 trait HasCoupledL2Parameters {
   val p: Parameters
-  // val tl2tlParams: HasTLL2Parameters = p(L2ParamKey)
-  def enableCHI = p(EnableCHI)
   def enableClockGate = p(EnableL2ClockGate)
   def cacheParams = p(L2ParamKey)
   def PrivateClintRange = cacheParams.PrivateClintRange
@@ -56,7 +57,6 @@ trait HasCoupledL2Parameters {
   def offsetBits = log2Ceil(blockBytes)
   def beatBits = offsetBits - log2Ceil(beatBytes)
   def stateBits = MetaData.stateBits
-  def chiOpt = if (enableCHI) Some(true) else None
   def aliasBitsOpt = if(cacheParams.clientCaches.isEmpty) None
                   else cacheParams.clientCaches.head.aliasBitsOpt
   // vaddr without offset bits
@@ -111,6 +111,7 @@ trait HasCoupledL2Parameters {
   def hasNLPrefetcher = prefetchers.exists(_.isInstanceOf[NLParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
+  def chiOpt = Some(true)
   def topDownOpt = if(cacheParams.elaboratedTopDown) Some(true) else None
 
   def enableHintGuidedGrant = true
@@ -260,7 +261,15 @@ trait HasCoupledL2Parameters {
   }
 }
 
-abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
+abstract class CoupledL2Bundle(implicit val p: Parameters) extends Bundle
+  with HasCoupledL2Parameters
+  with HasCHIMsgParameters
+
+abstract class CoupledL2Module(implicit val p: Parameters) extends Module
+  with HasCoupledL2Parameters
+  with HasCHIMsgParameters
+
+class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Parameters {
 
   val xfer = TransferSizes(blockBytes, blockBytes)
   val atom = TransferSizes(1, cacheParams.channelBytes.d.get)
@@ -268,6 +277,32 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
   val pf_recv_node: Option[BundleBridgeSink[PrefetchRecv]] =
     if(hasReceiver) Some(BundleBridgeSink(Some(() => new PrefetchRecv))) else None
+
+  val addressRange = Seq(AddressSet(0x00000000L, 0xffffffffffffL)) // TODO: parameterize this
+  val managerParameters = TLSlavePortParameters.v1(
+    managers = Seq(TLSlaveParameters.v1(
+      address = addressRange,
+      regionType = RegionType.CACHED,
+      supportsAcquireT = xfer,
+      supportsAcquireB = xfer,
+      supportsArithmetic = atom,
+      supportsLogical = atom,
+      supportsGet = access,
+      supportsPutFull = access,
+      supportsPutPartial = access,
+      supportsHint = access,
+      fifoId = None
+    )),
+    beatBytes = 32,
+    minLatency = 2,
+    responseFields = cacheParams.respField,
+    requestKeys = cacheParams.reqKey,
+    endSinkId = idsAll * (1 << bankBits)
+  )
+  val managerNode = TLManagerNode(Seq(managerParameters))
+
+  val mmioBridge = LazyModule(new MMIOBridge)
+  val mmioNode = mmioBridge.mmioNode
 
   val managerPortParams = (m: TLSlavePortParameters) => TLSlavePortParameters.v1(
     m.managers.map { m =>
@@ -318,7 +353,7 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
   val tpmeta_source_node = if(hasTPPrefetcher) Some(BundleBridgeSource(() => DecoupledIO(new TPmetaReq(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits)))) else None
   val tpmeta_sink_node = if(hasTPPrefetcher) Some(BundleBridgeSink(Some(() => ValidIO(new TPmetaResp(hartIdLen, node.in.head._2.bundle.addressBits, offsetBits))))) else None
 
-  abstract class BaseCoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents {
+  class CoupledL2Imp(wrapper: LazyModule) extends LazyModuleImp(wrapper) with HasPerfEvents with HasCHIOpcodes {
     val banks = node.in.size
     val bankBits = log2Ceil(banks)
     val l2TlbParams: Parameters = p.alterPartial {
@@ -351,12 +386,15 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
       val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
+      val chi = new PortIO
+      val nodeID = Input(UInt())
+      val cpu_wfi = Option.when(cacheParams.enableL2Flush)(Input(Bool()))
     })
 
     // Display info
     val sizeBytes = cacheParams.toCacheParams.capacity.toDouble
     val sizeStr = sizeBytesToStr(sizeBytes)
-    println(s"====== Inclusive TL-${if (enableCHI) "CHI" else "TL"} ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
+    println(s"====== Inclusive CHI ${cacheParams.name} ($sizeStr * $banks-bank)  ======")
     println(s"prefetch: ${cacheParams.prefetch}")
     println(s"bankBits: ${bankBits}")
     println(s"replacement: ${cacheParams.replacement}")
@@ -364,6 +402,16 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
     println(s"sets:${cacheParams.sets} ways:${cacheParams.ways} blockBytes:${cacheParams.blockBytes}")
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
+
+    require(io.chi.tx.rsp.getWidth == io.chi.rx.rsp.getWidth)
+    require(io.chi.tx.dat.getWidth == io.chi.rx.dat.getWidth)
+
+    println(s"CHI Issue Version: ${p(CHIIssue)}")
+    println(s"CHI REQ Flit Width: ${io.chi.tx.req.flit.getWidth}")
+    println(s"CHI RSP Flit Width: ${io.chi.tx.rsp.flit.getWidth}")
+    println(s"CHI SNP Flit Width: ${io.chi.rx.snp.flit.getWidth}")
+    println(s"CHI DAT Flit Width: ${io.chi.rx.dat.flit.getWidth}")
+    println(s"CHI Port Width: ${io.chi.getWidth}")
 
     println(s"Cacheable:")
     node.edges.in.headOption.foreach { n =>
@@ -373,6 +421,17 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
             s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
       }
     }
+
+    println(s"MMIO:")
+    mmioNode.edges.in.headOption.foreach { n =>
+      n.client.clients.zipWithIndex.foreach {
+        case (c, i) =>
+          println(s"\t${i} <= ${c.name};" +
+            s"\tsourceRange: ${c.sourceId.start}~${c.sourceId.end}")
+      }
+    }
+
+    val mmio = mmioBridge.module
 
     // Connection between prefetcher and the slices
     val pftParams: Parameters = p.alterPartial {
@@ -427,6 +486,23 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       val hasData = Bool()
     })))
 
+    def setSliceID(txnID: UInt, sliceID: UInt, mmioReq: Bool): UInt = {
+      Mux(
+        mmioReq,
+        Cat(1.U(1.W), txnID.tail(1)),
+        Cat(0.U(1.W), if (banks <= 1) txnID.tail(1) else Cat(sliceID(bankBits - 1, 0), txnID.tail(bankBits + 1)))
+      )
+    }
+    def getSliceID(txnID: UInt): UInt = if (banks <= 1) 0.U else txnID.tail(1).head(bankBits)
+    def restoreTXNID(txnID: UInt): UInt = {
+      val mmioReq = txnID.head(1).asBool
+      Mux(
+        mmioReq || (banks <= 1).B,
+        Cat(0.U(1.W), txnID.tail(1)),
+        Cat(0.U(1.W), 0.U(bankBits.W), txnID.tail(bankBits + 1))
+      )
+    }
+
     // if Hint indicates that this slice should fireD, yet no D resp comes out of this slice
     // then we releaseSourceD, enabling io.d.ready for other slices
     // TODO: if Hint for single slice is 100% accurate, may consider remove this
@@ -441,21 +517,12 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         require(in.params.dataBits == out.params.dataBits)
         val rst_L2 = reset
         val slice = withReset(rst_L2) {
-          if (enableCHI) {
-            Module(new tl2chi.Slice()(p.alterPartial {
-              case EdgeInKey => edgeIn
-              case EdgeOutKey => edgeOut
-              case BankBitsKey => bankBits
-              case SliceIdKey => i
-            }))
-          } else {
-            Module(new tl2tl.Slice()(p.alterPartial {
-              case EdgeInKey => edgeIn
-              case EdgeOutKey => edgeOut
-              case BankBitsKey => bankBits
-              case SliceIdKey => i
-            }))
-          }
+          Module(new Slice()(p.alterPartial {
+            case EdgeInKey => edgeIn
+            case EdgeOutKey => edgeOut
+            case BankBitsKey => bankBits
+            case SliceIdKey => i
+          }))
         }
         slice.io.in <> in
         if (enableHintGuidedGrant) {
@@ -510,6 +577,130 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
 
         slice
     }
+
+    val txreq_arb = Module(new TwoLevelRRArbiter(new CHIREQ, slices.size + 1))
+    ArbPerf(txreq_arb, "txreq_arb")
+    val txreq = Wire(DecoupledIO(new CHIREQ))
+    slices.zip(txreq_arb.io.in.init).foreach { case (s, in) => in <> s.io.out.tx.req }
+    txreq_arb.io.in.last <> mmio.io.tx.req
+    txreq <> txreq_arb.io.out
+    txreq.bits.txnID := setSliceID(txreq_arb.io.out.bits.txnID, txreq_arb.io.chosen, mmio.io.tx.req.fire)
+
+    val txrsp = Wire(DecoupledIO(new CHIRSP))
+    fastArb(slices.map(_.io.out.tx.rsp), txrsp, Some("txrsp"))
+
+    val txdat = Wire(DecoupledIO(new CHIDAT))
+    fastArb(slices.map(_.io.out.tx.dat) :+ mmio.io.tx.dat, txdat, Some("txdat"))
+
+    val rxsnp = Wire(DecoupledIO(new CHISNP))
+    val rxsnpSliceID = if (banks <= 1) 0.U else (rxsnp.bits.addr >> (offsetBits - 3))(bankBits - 1, 0)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.snp.valid := rxsnp.valid && rxsnpSliceID === i.U
+      s.io.out.rx.snp.bits := rxsnp.bits
+    }
+    rxsnp.ready := Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.snp.ready && rxsnpSliceID === i.U }).orR
+
+    val rxrsp = Wire(DecoupledIO(new CHIRSP))
+    val rxrspIsMMIO = rxrsp.bits.txnID.head(1).asBool
+    val isPCrdGrant = rxrsp.valid && rxrsp.bits.opcode === PCrdGrant
+
+    class EmptyBundle extends Bundle
+    class PCrdGranted extends Bundle {
+      val pCrdType = UInt(PCRDTYPE_WIDTH.W)
+      val srcID = UInt(SRCID_WIDTH.W)
+    }
+
+    val (mmioQuerys, mmioGrants) = mmio.io_pCrd.map { case x => (x.query, x.grant) }.unzip
+    val (slicesQuerys, slicesGrants) = slices.map { case s =>
+      (s.io_pCrd.map(_.query), s.io_pCrd.map(_.grant))
+    }.unzip
+    val mshrPCrdQuerys = mmioQuerys ++ slicesQuerys.flatten
+    val mshrPCrdGrants = mmioGrants ++ slicesGrants.flatten
+    val mshrEntryCount = mshrPCrdQuerys.length
+
+    val pCrdQueue_s2 = Module(new Queue(new PCrdGranted, entries = mshrEntryCount - 2))
+    val pCrdQueue_s3 = Module(new Queue(new PCrdGranted, entries = 2))
+    pCrdQueue_s3.io.enq <> pCrdQueue_s2.io.deq
+
+    val mshrPCrdHits = mshrPCrdQuerys.map((_, pCrdQueue_s3.io.deq)).map { case (q, h) =>
+      q.valid && h.valid && q.bits.pCrdType === h.bits.pCrdType && q.bits.srcID === h.bits.srcID
+    }
+    val mshrPCrdArbGrants = Wire(Vec(mshrEntryCount, Bool()))
+    val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hit, grant) =>
+      val arbPort = Wire(Decoupled(new EmptyBundle))
+      arbPort.valid := hit
+      grant := arbPort.ready
+      arbPort
+    }
+    val mshrPCrdArbOut = {
+      val arbPort = Wire(Decoupled(new EmptyBundle))
+      arbPort.ready := true.B
+      pCrdQueue_s3.io.deq.ready := arbPort.valid
+      arbPort
+    }
+    ArbPerf(twoLevelArb(mshrPCrdArbIn, mshrPCrdArbOut, Some("pcrdgrant")), "pcrdgrant_arb")
+    mshrPCrdGrants.zip(mshrPCrdArbGrants).foreach { case (grant, arb) => grant := arb }
+
+    val pCrdGrantValid_s1 = RegNext(isPCrdGrant)
+    val pCrdGrantType_s1 = RegNext(rxrsp.bits.pCrdType)
+    val pCrdGrantSrcID_s1 = RegNext(rxrsp.bits.srcID)
+    pCrdQueue_s2.io.enq.valid := pCrdGrantValid_s1
+    pCrdQueue_s2.io.enq.bits.pCrdType := pCrdGrantType_s1
+    pCrdQueue_s2.io.enq.bits.srcID := pCrdGrantSrcID_s1
+    val grantCnt = RegInit(0.U(64.W))
+    when (pCrdQueue_s3.io.deq.ready) {
+      grantCnt := grantCnt + 1.U
+    }
+    dontTouch(grantCnt)
+
+    val rxrspSliceID = getSliceID(rxrsp.bits.txnID)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.rsp.valid := rxrsp.valid && rxrspSliceID === i.U && !rxrspIsMMIO && !isPCrdGrant
+      s.io.out.rx.rsp.bits := rxrsp.bits
+      s.io.out.rx.rsp.bits.txnID := restoreTXNID(rxrsp.bits.txnID)
+    }
+    mmio.io.rx.rsp.valid := rxrsp.valid && rxrspIsMMIO && !isPCrdGrant
+    mmio.io.rx.rsp.bits := rxrsp.bits
+    mmio.io.rx.rsp.bits.txnID := restoreTXNID(rxrsp.bits.txnID)
+    rxrsp.ready := rxrsp.bits.opcode === PCrdGrant || Mux(
+      rxrspIsMMIO,
+      mmio.io.rx.rsp.ready,
+      Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.rsp.ready && rxrspSliceID === i.U }).orR
+    )
+
+    val rxdat = Wire(DecoupledIO(new CHIDAT))
+    val rxdatIsMMIO = rxdat.bits.txnID.head(1).asBool
+    val rxdatSliceID = getSliceID(rxdat.bits.txnID)
+    slices.zipWithIndex.foreach { case (s, i) =>
+      s.io.out.rx.dat.valid := rxdat.valid && rxdatSliceID === i.U && !rxdatIsMMIO
+      s.io.out.rx.dat.bits := rxdat.bits
+      s.io.out.rx.dat.bits.txnID := restoreTXNID(rxdat.bits.txnID)
+    }
+    mmio.io.rx.dat.valid := rxdat.valid && rxdatIsMMIO
+    mmio.io.rx.dat.bits := rxdat.bits
+    mmio.io.rx.dat.bits.txnID := restoreTXNID(rxdat.bits.txnID)
+    rxdat.ready := Mux(
+      rxdatIsMMIO,
+      mmio.io.rx.dat.ready,
+      Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U }).orR
+    )
+
+    val linkMonitor = Module(new LinkMonitor)
+    val rxdatPipe = Pipeline(linkMonitor.io.in.rx.dat)
+    val rxrspPipe = Pipeline(linkMonitor.io.in.rx.rsp)
+    linkMonitor.io.in.tx.req <> txreq
+    linkMonitor.io.in.tx.rsp <> txrsp
+    linkMonitor.io.in.tx.dat <> txdat
+    rxsnp <> linkMonitor.io.in.rx.snp
+    rxrsp <> rxrspPipe
+    rxdat <> rxdatPipe
+    io.chi <> linkMonitor.io.out
+    linkMonitor.io.nodeID := io.nodeID
+    linkMonitor.io.exitco.foreach { _ :=
+      Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io.cpu_wfi.getOrElse(false.B)
+    }
+
+    XSPerfAccumulate("pcrd_count", pCrdQueue_s2.io.enq.fire)
 
     val perfEvents = Seq(("noEvent", 0.U)) ++ slices.zipWithIndex.map {
       case (slide, slide_idx) =>
@@ -572,18 +763,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
         case (hint, i) =>
           hint.ready := readysVec.map(_(i)).reduce(_||_)
       }
-    }
-
-    // Outer interface connection
-    slices.zip(node.out).zipWithIndex.foreach {
-      case ((slice, (out, _)), i) =>
-        slice match {
-          case slice: tl2tl.Slice =>
-            out <> slice.io.out
-            out.a.bits.address := restoreAddress(slice.io.out.a.bits.address, i)
-            out.c.bits.address := restoreAddress(slice.io.out.c.bits.address, i)
-          case slice: tl2chi.Slice =>
-        }
     }
 
     // ==================== TopDown ====================
@@ -655,4 +834,6 @@ abstract class CoupledL2Base(implicit p: Parameters) extends LazyModule with Has
       None
     }
   }
+
+  lazy val module = new CoupledL2Imp(this)
 }

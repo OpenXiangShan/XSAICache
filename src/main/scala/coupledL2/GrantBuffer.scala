@@ -15,7 +15,7 @@
  * *************************************************************************************
  */
 
-package coupledL2
+package xscache.coupledL2
 
 import chisel3._
 import chisel3.util._
@@ -23,7 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
-import coupledL2.prefetch.PrefetchResp
+import xscache.coupledL2.prefetch.PrefetchResp
 
 // record info of those with Grant sent, yet GrantAck not received
 // used to block Probe upwards

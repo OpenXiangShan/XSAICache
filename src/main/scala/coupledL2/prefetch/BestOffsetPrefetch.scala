@@ -24,7 +24,7 @@
  * *************************************************************************************
  */
 
-package coupledL2.prefetch
+package xscache.coupledL2.prefetch
 
 import utility.{ChiselDB, Constantin, MemReqSource, ParallelPriorityMux, XSPerfAccumulate, TwoLevelRRArbiter, ArbPerf}
 import utility.sram.SRAMTemplate
@@ -32,11 +32,11 @@ import org.chipsalliance.cde.config.Parameters
 import chisel3.DontCare.:=
 import chisel3._
 import chisel3.util._
-import coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
-import coupledL2.utils.ReplacementPolicy
+import xscache.coupledL2.{HasCoupledL2Parameters, L2TlbReq, L2ToL1TlbIO, TlbCmd, Pbmt}
+import xscache.coupledL2.utils.ReplacementPolicy
 import scopt.Read
 import freechips.rocketchip.util.SeqToAugmentedSeq
-import coupledL2.utils._
+import xscache.coupledL2.utils._
 
 case class BOPParameters(
   virtualTrain: Boolean = true,
