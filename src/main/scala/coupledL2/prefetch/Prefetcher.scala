@@ -23,7 +23,7 @@ import utility._
 import org.chipsalliance.cde.config.Parameters
 import utility.mbist.MbistPipeline
 import xscache.coupledL2._
-import xscache.coupledL2.utils.OverwriteQueue
+import xscache.coupledL2.utils._
 
 /* virtual address */
 trait HasPrefetcherHelper extends HasCircularQueuePtrHelper with HasCoupledL2Parameters {
@@ -120,6 +120,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   val pfSource = UInt(MemReqSource.reqSourceBits.W)
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
+  def setaddr: UInt = Cat(tag, set)
   def isBOP:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U
   def isPBOP:Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
@@ -131,7 +132,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U 
+      pfSource === MemReqSource.Prefetch2L2NL.id.U
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -146,13 +147,13 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   def isPBOP: Bool = pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
-  def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U 
+  def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
   def fromL2: Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U 
+      pfSource === MemReqSource.Prefetch2L2NL.id.U
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
@@ -181,8 +182,20 @@ class PrefetchIO(implicit p: Parameters) extends PrefetchBundle {
   }))
 }
 
+class PrefetchTopIO(implicit p: Parameters) extends PrefetchBundle {
+  val banks = 1 << bankBits
+  val train = Vec(banks, Flipped(DecoupledIO(new PrefetchTrain)))
+  val tlb_req = new L2ToL1TlbIO(nRespDups= 1)
+  val req = Vec(banks, DecoupledIO(new PrefetchReq))
+  val resp = Vec(banks, Flipped(DecoupledIO(new PrefetchResp)))
+  val recv_addr = Flipped(ValidIO(new Bundle() {
+    val addr = UInt(64.W)
+    val pfSource = UInt(MemReqSource.reqSourceBits.W)
+  }))
+}
+
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
-  val io = IO(new PrefetchIO)
+  val io = IO(new PrefetchTopIO)
   val tpio = IO(new Bundle() {
     val tpmeta_port = if (hasTPPrefetcher) Some(new tpmetaPortIO(hartIdLen, fullAddressBits, offsetBits)) else None
   })
@@ -195,6 +208,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val vbop_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_vbop_en
   val tp_en = pfCtrlFromCore.l2_pf_master_en && pfCtrlFromCore.l2_tp_en
   val delay_latency = pfCtrlFromCore.l2_pf_delay_latency
+  val banks = 1 << bankBits
 
   // =================== Prefetchers =====================
   // TODO: consider separate VBOP and PBOP in prefetch param
@@ -244,34 +258,32 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   // prefetch from upper level
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
 
+  val train = Wire(DecoupledIO(new PrefetchTrain))
+  val resp = Wire(DecoupledIO(new PrefetchResp))
+  fastArb(io.train, train, Some("prefetch_train"))
+  fastArb(io.resp, resp, Some("prefetch_resp"))
+
   // =================== Connection for each Prefetcher =====================
   // Rcv > NL >VBOP > PBOP > TP
   if (hasBOP) {
     vbop.get.io.enable := vbop_en
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
-    vbop.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
-                             (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) 
-    vbop.get.io.train <> io.train
-    vbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-    vbop.get.io.resp <> io.resp
-    vbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isBOP
+    vbop.get.io.train <> train
+    vbop.get.io.train.valid := train.valid && (train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    vbop.get.io.resp <> resp
+    vbop.get.io.resp.valid := resp.valid && resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
     vbop.get.io.pbopCrossPage := true.B // pbop.io.pbopCrossPage // let vbop have noting to do with pbop
 
     pbop.get.io.enable := pbop_en
     pbop.get.io.pfCtrlOfDelayLatency := delay_latency
-    pbop.get.io.req.ready :=
-      (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
-      (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) &&
-      (if(hasBOP) !vbop.get.io.req.valid else true.B)
-    pbop.get.io.train <> io.train
-    pbop.get.io.train.valid := io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
-    pbop.get.io.resp <> io.resp
-    pbop.get.io.resp.valid := io.resp.valid && io.resp.bits.isPBOP
+    pbop.get.io.train <> train
+    pbop.get.io.train.valid := train.valid && (train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
+    pbop.get.io.resp <> resp
+    pbop.get.io.resp.valid := resp.valid && resp.bits.isPBOP
   }
   if (hasReceiver) {
     pfRcv.get.io_enable := pfRcv_en
-    pfRcv.get.io.req.ready := true.B
     pfRcv.get.io.recv_addr := ValidIODelay(io.recv_addr, 2)
     pfRcv.get.io.train.valid := false.B
     pfRcv.get.io.train.bits := 0.U.asTypeOf(new PrefetchTrain)
@@ -291,19 +303,15 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   if (hasNLPrefetcher) {
     nl.get.io.enable := true.B
-    nl.get.io.train <> io.train 
-    nl.get.io.resp <> io.resp  
-    nl.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) 
+    nl.get.io.train <> train
+    nl.get.io.resp <> resp
   }
 
   if (hasTPPrefetcher) {
     tp.get.io.enable := tp_en
-    tp.get.io.train <> io.train
-    tp.get.io.resp <> io.resp
+    tp.get.io.train <> train
+    tp.get.io.resp <> resp
     tp.get.io.hartid := hartId
-    tp.get.io.req.ready := (if(hasReceiver) !pfRcv.get.io.req.valid else true.B) &&
-      (if(hasNLPrefetcher) !nl.get.io.req.valid else true.B) &&
-      (if(hasBOP) !vbop.get.io.req.valid && !pbop.get.io.req.valid else true.B)
 
     tp.get.io.tpmeta_port <> tpio.tpmeta_port.get
   }
@@ -311,64 +319,68 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
 
   // =================== Connection of all Prefetchers =====================
   /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
-  val pftQueue = Module(
-    new OverwriteQueue( 
-      gen = new PrefetchReq ,
-      entries = inflightEntries,
-      hasFlow = true
-    )
-  )
-  val pipe = Module(new Pipeline(io.req.bits.cloneType, 1))
-
   private val SRC_NUM = 5
   private val Seq(rcv_idx, nl_idx, vbop_idx, pbop_idx, tp_idx) = (0 until SRC_NUM).toSeq
-  val pftQueueEnqArb = Module(new Arbiter(new PrefetchReq, SRC_NUM))
-  pftQueueEnqArb.io.in.foreach{ x =>
-    x.valid := false.B
-    x.bits := 0.U.asTypeOf(new PrefetchReq)
+  val reqs = Seq(
+    if (hasReceiver) Some(pfRcv.get.io.req) else None,
+    if (hasNLPrefetcher) Some(nl.get.io.req) else None,
+    if (hasBOP) Some(vbop.get.io.req) else None,
+    if (hasBOP) Some(pbop.get.io.req) else None,
+    if (hasTPPrefetcher) Some(tp.get.io.req) else None
+  )
+  val reqsValid = reqs.map(_.map(_.valid).getOrElse(false.B))
+  val reqsBits = reqs.map(_.map(_.bits).getOrElse(0.U.asTypeOf(new PrefetchReq)))
+  val reqsSetAddr = reqsBits.map(_.setaddr)
+  val pftQueue = Seq.tabulate(banks) { _ =>
+    Module(new OverwriteQueue(
+      gen = new PrefetchReq,
+      entries = inflightEntries,
+      hasFlow = true
+    ))
   }
-  if (hasReceiver) {
-    pftQueueEnqArb.io.in(rcv_idx).valid := pfRcv.get.io.req.valid
-    pftQueueEnqArb.io.in(rcv_idx).bits := pfRcv.get.io.req.bits
-  }
-  if (hasBOP) {
-    pftQueueEnqArb.io.in(vbop_idx).valid := vbop.get.io.req.valid
-    pftQueueEnqArb.io.in(vbop_idx).bits := vbop.get.io.req.bits
-    pftQueueEnqArb.io.in(pbop_idx).valid := pbop.get.io.req.valid
-    pftQueueEnqArb.io.in(pbop_idx).bits := pbop.get.io.req.bits
-  }
-  if (hasTPPrefetcher) {
-    pftQueueEnqArb.io.in(tp_idx).valid := tp.get.io.req.valid
-    pftQueueEnqArb.io.in(tp_idx).bits := tp.get.io.req.bits
-  }
-  if (hasNLPrefetcher) {
-    pftQueueEnqArb.io.in(nl_idx).valid := nl.get.io.req.valid
-    pftQueueEnqArb.io.in(nl_idx).bits := nl.get.io.req.bits
-  }
-  pftQueue.io.enq <> pftQueueEnqArb.io.out
+  val pipe = Seq.tabulate(banks) { _ => Module(new Pipeline(new PrefetchReq, 1)) }
+  val select = Wire(Vec(banks, Vec(SRC_NUM, Bool())))
+  val selectOH = Wire(Vec(banks, Vec(SRC_NUM, Bool())))
 
-  pipe.io.in <> pftQueue.io.deq
-  io.req <> pipe.io.out
+  for (i <- 0 until banks) {
+    select(i) := VecInit(reqsValid.zip(reqsSetAddr).map {
+      case (valid, addr) => valid && bank_eq(addr, i, bankBits)
+    })
+    selectOH(i) := VecInit(PriorityEncoderOH(select(i).asUInt).asBools)
+    pftQueue(i).io.enq.valid := select(i).asUInt.orR
+    pftQueue(i).io.enq.bits := ParallelPriorityMux(select(i).asUInt, reqsBits)
+    pipe(i).io.in <> pftQueue(i).io.deq
+    io.req(i) <> pipe(i).io.out
+  }
 
-  XSPerfAccumulate("prefetch_train_valid", io.train.valid)
-  XSPerfAccumulate("prefetch_req_fromL1", pftQueueEnqArb.io.in(rcv_idx).valid)
-  XSPerfAccumulate("prefetch_req_fromVBOP", pftQueueEnqArb.io.in(vbop_idx).valid)
-  XSPerfAccumulate("prefetch_req_fromPBOP", pftQueueEnqArb.io.in(pbop_idx).valid)
-  XSPerfAccumulate("prefetch_req_fromBOP", pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid)
-  XSPerfAccumulate("prefetch_req_fromTP",  pftQueueEnqArb.io.in(tp_idx).valid)
-  XSPerfAccumulate("prefetch_req_fromNL",  pftQueueEnqArb.io.in(nl_idx).valid)
+  for ((reqOpt, j) <- reqs.zipWithIndex) {
+    reqOpt.foreach { req =>
+      req.ready := (0 until banks).map(i => selectOH(i)(j)).reduce(_ || _)
+    }
+  }
 
-  XSPerfAccumulate("prefetch_req_selectL1", pftQueueEnqArb.io.in(rcv_idx).fire)
-  XSPerfAccumulate("prefetch_req_selectVBOP", pftQueueEnqArb.io.in(vbop_idx).fire)
-  XSPerfAccumulate("prefetch_req_selectPBOP", pftQueueEnqArb.io.in(pbop_idx).fire)
-  XSPerfAccumulate("prefetch_req_selectBOP", pftQueueEnqArb.io.in(vbop_idx).fire || pftQueueEnqArb.io.in(pbop_idx).fire)
-  XSPerfAccumulate("prefetch_req_selectTP",  pftQueueEnqArb.io.in(tp_idx).fire)
-  XSPerfAccumulate("prefetch_req_selectNL",  pftQueueEnqArb.io.in(nl_idx).fire)
+  val reqsFire = reqs.map(_.map(_.fire).getOrElse(false.B))
+
+  XSPerfAccumulate("prefetch_train_valid", train.valid)
+  XSPerfAccumulate("prefetch_train_in_valid", PopCount(io.train.map(_.valid)))
+  XSPerfAccumulate("prefetch_resp_valid", resp.valid)
+  XSPerfAccumulate("prefetch_resp_in_valid", PopCount(io.resp.map(_.valid)))
+  XSPerfAccumulate("prefetch_req_fromL1", reqsValid(rcv_idx))
+  XSPerfAccumulate("prefetch_req_fromVBOP", reqsValid(vbop_idx))
+  XSPerfAccumulate("prefetch_req_fromPBOP", reqsValid(pbop_idx))
+  XSPerfAccumulate("prefetch_req_fromBOP", reqsValid(vbop_idx) || reqsValid(pbop_idx))
+  XSPerfAccumulate("prefetch_req_fromTP", reqsValid(tp_idx))
+  XSPerfAccumulate("prefetch_req_fromNL", reqsValid(nl_idx))
+
+  XSPerfAccumulate("prefetch_req_selectL1", reqsFire(rcv_idx))
+  XSPerfAccumulate("prefetch_req_selectVBOP", reqsFire(vbop_idx))
+  XSPerfAccumulate("prefetch_req_selectPBOP", reqsFire(pbop_idx))
+  XSPerfAccumulate("prefetch_req_selectBOP", reqsFire(vbop_idx) || reqsFire(pbop_idx))
+  XSPerfAccumulate("prefetch_req_selectTP", reqsFire(tp_idx))
+  XSPerfAccumulate("prefetch_req_selectNL", reqsFire(nl_idx))
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
-    pftQueueEnqArb.io.in(rcv_idx).valid && (
-      pftQueueEnqArb.io.in(vbop_idx).valid || pftQueueEnqArb.io.in(pbop_idx).valid || pftQueueEnqArb.io.in(tp_idx).valid
-      || pftQueueEnqArb.io.in(nl_idx).valid
-    )
+    reqsValid(rcv_idx) &&
+      (reqsValid(vbop_idx) || reqsValid(pbop_idx) || reqsValid(tp_idx) || reqsValid(nl_idx))
   )
 
   // NOTE: set basicDB false when debug over
@@ -385,18 +397,18 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   }
   val trainTT = ChiselDB.createTable("L2PrefetchTrainTable", new TrainEntry, basicDB = false)
   val e1 = Wire(new TrainEntry)
-  e1.paddr := io.train.bits.addr
-  e1.vaddr := io.train.bits.vaddr.getOrElse(0.U) << offsetBits
-  e1.needT := io.train.bits.needT
-  e1.hit := io.train.bits.hit
-  e1.prefetched := io.train.bits.prefetched
-  e1.source := io.train.bits.source
-  e1.pfsource := io.train.bits.pfsource
-  e1.reqsource := io.train.bits.reqsource
+  e1.paddr := train.bits.addr
+  e1.vaddr := train.bits.vaddr.getOrElse(0.U) << offsetBits
+  e1.needT := train.bits.needT
+  e1.hit := train.bits.hit
+  e1.prefetched := train.bits.prefetched
+  e1.source := train.bits.source
+  e1.pfsource := train.bits.pfsource
+  e1.reqsource := train.bits.reqsource
   trainTT.log(
     data = e1,
-    en = io.train.valid && (io.train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U),
-    site = "L2Train_onlyBOP",
+    en = train.valid,
+    site = "L2Train",
     clock, reset
   )
 
@@ -405,15 +417,17 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     val needT = Bool()
     val pfsource = UInt(MemReqSource.reqSourceBits.W)
   }
-  val pfTT = ChiselDB.createTable("L2PrefetchPrefetchTable", new PrefetchEntry, basicDB = false)
-  val e2 = Wire(new PrefetchEntry)
-  e2.paddr := io.req.bits.addr
-  e2.needT := io.req.bits.needT
-  e2.pfsource := io.req.bits.pfSource
-  pfTT.log(
-    data = e2,
-    en = io.req.fire && io.req.bits.pfSource === MemReqSource.Prefetch2L2BOP.id.U,
-    site = "L2Prefetch_onlyBOP",
-    clock, reset
-  )
+  val pfTT = ChiselDB.createTable("L2PrefetchReqTable", new PrefetchEntry, basicDB = false)
+  for (i <- 0 until banks) {
+    val e2 = Wire(new PrefetchEntry)
+    e2.paddr := io.req(i).bits.addr
+    e2.needT := io.req(i).bits.needT
+    e2.pfsource := io.req(i).bits.pfSource
+    pfTT.log(
+      data = e2,
+      en = io.req(i).fire,
+      site = "L2PrefetchReq",
+      clock, reset
+    )
+  }
 }
