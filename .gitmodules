@@ -7,3 +7,6 @@
 [submodule "OpenNCB"]
 	path = OpenNCB
 	url = https://github.com/OpenXiangShan/OpenNCB.git
+[submodule "ZhuJiang"]
+	path = ZhuJiang
+	url = https://github.com/OpenXiangShan/ZhuJiang.git

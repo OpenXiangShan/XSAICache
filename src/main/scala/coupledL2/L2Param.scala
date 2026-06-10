@@ -29,6 +29,7 @@ import xscache.common.{AliasKey, CacheParameters, IsHitKey, PrefetchKey, BankBit
 
 case object EnableL2ClockGate extends Field[Boolean](true)
 case object EnableMatrix extends Field[Boolean](false)
+case object EnableL2DecoupledDownstreamCHI extends Field[Boolean](false)
 
 // L1 Cache Params, used for TestTop generation
 case class L1Param

@@ -60,7 +60,7 @@ object TestTop_L3 extends App {
   ))
 }
 
-class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = Issue.Eb, extTime: Boolean = true)(implicit p: Parameters) extends LazyModule
+class TestTopOpenLLC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue: String = Issue.Eb, extTime: Boolean = true)(implicit p: Parameters) extends LazyModule
   with HasCHIMsgParameters {
   
   /*   L1D(L1I)* L1D(L1I)* ... L1D(L1I)*
@@ -270,17 +270,17 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
           clock = l2.module.clock,
           reset = l2.module.reset,
           rnId  = l2.module.io.nodeID,
-          txreqflit = l2.module.io.chi.tx.req.flit, txreqflitv = l2.module.io.chi.tx.req.flitv,
-          rxrspflit = l2.module.io.chi.rx.rsp.flit, rxrspflitv = l2.module.io.chi.rx.rsp.flitv,
-          rxdatflit = l2.module.io.chi.rx.dat.flit, rxdatflitv = l2.module.io.chi.rx.dat.flitv,
-          rxsnpflit = l2.module.io.chi.rx.snp.flit, rxsnpflitv = l2.module.io.chi.rx.snp.flitv,
-          txrspflit = l2.module.io.chi.tx.rsp.flit, txrspflitv = l2.module.io.chi.tx.rsp.flitv,
-          txdatflit = l2.module.io.chi.tx.dat.flit, txdatflitv = l2.module.io.chi.tx.dat.flitv,
+          txreqflit = l2.module.io.lcreditCHI.get.tx.req.flit, txreqflitv = l2.module.io.lcreditCHI.get.tx.req.flitv,
+          rxrspflit = l2.module.io.lcreditCHI.get.rx.rsp.flit, rxrspflitv = l2.module.io.lcreditCHI.get.rx.rsp.flitv,
+          rxdatflit = l2.module.io.lcreditCHI.get.rx.dat.flit, rxdatflitv = l2.module.io.lcreditCHI.get.rx.dat.flitv,
+          rxsnpflit = l2.module.io.lcreditCHI.get.rx.snp.flit, rxsnpflitv = l2.module.io.lcreditCHI.get.rx.snp.flitv,
+          txrspflit = l2.module.io.lcreditCHI.get.tx.rsp.flit, txrspflitv = l2.module.io.lcreditCHI.get.tx.rsp.flitv,
+          txdatflit = l2.module.io.lcreditCHI.get.tx.dat.flit, txdatflitv = l2.module.io.lcreditCHI.get.tx.dat.flitv,
           time = time_sim, timev = extTime.B
         )
       }
 
-      l2.module.io.chi <> l3.io.rn(i)
+      l2.module.io.lcreditCHI.get <> l3.io.rn(i)
       dontTouch(l2.module.io)
 
       l2.module.io.l2_hint <> io_l1(i).l2Hint
@@ -342,8 +342,8 @@ class TestTopSoC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, issue:
   }
 }
 
-object TestTopSoCHelper {
-  def gen(fTop: Parameters => TestTopSoC)(args: Array[String]) = {
+object TestTopOpenLLCHelper {
+  def gen(fTop: Parameters => TestTopOpenLLC)(args: Array[String]) = {
     val FPGAPlatform    = false
     val enableChiselDB  = !FPGAPlatform && true
     val enableCHILog    = !FPGAPlatform && true
@@ -398,16 +398,16 @@ object TestTopSoCHelper {
   }
 }
 
-object TestTopSoC_SingleCore extends App {
-  TestTopSoCHelper.gen(p => new TestTopSoC(
+object TestTopOpenLLC_SingleCore extends App {
+  TestTopOpenLLCHelper.gen(p => new TestTopOpenLLC(
     numCores = 1,
     numULAgents = 2,
     banks = 1
   )(p))(args)
 }
 
-object TestTopSoC_DualCore extends App {
-  TestTopSoCHelper.gen(p => new TestTopSoC(
+object TestTopOpenLLC_DualCore extends App {
+  TestTopOpenLLCHelper.gen(p => new TestTopOpenLLC(
     numCores = 2,
     numULAgents = 2,
     banks = 1

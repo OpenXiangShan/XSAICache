@@ -32,17 +32,19 @@ MATRIX_TOP_ARGS = --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --m-agent $(NUM_M_AGEN
 		       --fpga $(FPGA)
 BUILD_DIR_L2 = ./build/coupledl2
 BUILD_DIR_LLC = ./build/openllc
+BUILD_DIR_ZJ_SINGLECORE = ./build/zj_singlecore
+BUILD_DIR_ZJ_DUALCORE = ./build/zj_dualcore
 TOP_V_L2 = $(BUILD_DIR_L2)/$(TOP).sv
 TOP_V_LLC = $(BUILD_DIR_LLC)/$(TOP).sv
 MEM_GEN = ./scripts/vlsi_mem_gen
 MEM_GEN_SEP = ./scripts/gen_sep_mem.sh
 
 gen-test-top:
-	mill -i XSCache.test.runMain xscache.coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) --target systemverilog --split-verilog
+	mill -i XSCache.testtop.l2.runMain xscache.coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) --target systemverilog --split-verilog
 	if [ -f "$(TOP_V_L2).conf" ]; then $(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"; fi
 
 gen-test-top-chi:
-	mill -i XSCache.test.runMain xscache.coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
+	mill -i XSCache.testtop.l2.runMain xscache.coupledL2.$(TOP)_$(SYSTEM) -td $(BUILD_DIR_L2) $(CHI_TOP_ARGS) --target systemverilog --split-verilog
 	if [ -f "$(TOP_V_L2).conf" ]; then $(MEM_GEN_SEP) "$(MEM_GEN)" "$(TOP_V_L2).conf" "$(BUILD_DIR_L2)"; fi
 
 test-top-chi:
@@ -61,16 +63,22 @@ test-top-chi-quadcore-2ul:
 	$(MAKE) gen-test-top-chi SYSTEM=CHIL2 $(CHI_PASS_ARGS) NUM_CORE=4 NUM_TL_UL=2
 
 test-top-l3-openllc:
-	mill -i XSCache.test.runMain xscache.openLLC.TestTop_L3 -td build --target systemverilog --split-verilog
+	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTop_L3 -td build --target systemverilog --split-verilog
 
 test-top-l2l3-openllc:
-	mill -i XSCache.test.runMain xscache.openLLC.TestTopSoC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopOpenLLC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
 
 test-top-matrix:
 	mill -i XSCache.test.runMain xscache.openLLC.TestTopMatrix -td $(BUILD_DIR_LLC) $(MATRIX_TOP_ARGS) --target systemverilog --split-verilog
 
 test-top-l2l3l2-openllc:
-	mill -i XSCache.test.runMain xscache.openLLC.TestTopSoC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopOpenLLC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
+
+test-top-zhujiang-singlecore:
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestTopZhuJiang_SingleCore -td $(BUILD_DIR_ZJ_SINGLECORE) --target systemverilog --split-verilog
+
+test-top-zhujiang-dualcore:
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestTopZhuJiang_DualCore -td $(BUILD_DIR_ZJ_DUALCORE) --target systemverilog --split-verilog
 
 clean:
 	rm -rf ./build

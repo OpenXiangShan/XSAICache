@@ -85,15 +85,16 @@ jobs:
       run: tar -zcf ${{ env.VERILATOR_ARCHIVE }} verilator
 
   # This workflow contains a single job called "build"
-  chi-test_L2:
+  unit-test:
     # The type of runner that the job will run on
     runs-on: ubuntu-22.04
 
     # Environments
     env:
-      RUN_ARCHIVE: xscache-chi-test-run-${{ github.sha }}
-      RUN_ARCHIVE_CHI: xscache-chi-test-run-${{ github.sha }}.tar.gz
-      RUN_ARCHIVE_MATRIX: xscache-chi-test-run-${{ github.sha }}-matrix.tar.gz
+      RUN_ARCHIVE: xscache-test-run-${{ github.sha }}
+      RUN_ARCHIVE_OPENLLC: xscache-test-run-${{ github.sha }}-openllc.tar.gz
+      RUN_ARCHIVE_MATRIX: xscache-test-run-${{ github.sha }}-matrix.tar.gz
+      RUN_ARCHIVE_ZHUJIANG: xscache-test-run-${{ github.sha }}-zhujiang.tar.gz
       VERILATOR_ARCHIVE: verilator-ubuntu-22.04-clang-17.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -164,7 +165,7 @@ jobs:
           fi
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
-      - name: Unit test for CHI version
+      - name: Unit test for CoupledL2 + OpenLLC
         run: |
             rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
@@ -183,7 +184,7 @@ jobs:
         if: always()
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_OPENLLC }} ./tl-test-new/run
 
       - name: Matrix trace tests for CHI version
         run: |
@@ -227,6 +228,26 @@ jobs:
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_MATRIX }} ./tl-test-new/run
+
+      - name: Unit test for CoupledL2 + ZhuJiang
+        run: |
+            rm -rf tl-test-new
+            git clone --branch feat-zhujiang --single-branch https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.inval.*=.*/cmo.enable.cbo.inval = 1/g' ./configs/user.tltest.ini
+            rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
+            make zhujiang-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
+            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
+            
+      - name: Tar up artifacts of Unit Test for CoupledL2 + ZhuJiang
+        if: always()
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_ZHUJIANG }} ./tl-test-new/run
       
       - name: Upload artifacts of Unit Test
         if: always()
