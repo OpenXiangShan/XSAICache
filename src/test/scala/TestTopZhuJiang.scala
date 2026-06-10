@@ -15,7 +15,7 @@ import xscache.common.{AliasField, BankBitsKey, PrefetchField}
 import xscache.coupledL2.{CoupledL2, EdgeInKey, EnableL2DecoupledDownstreamCHI, L1Param, L2ParamKey, L2ToL1Hint}
 import xscache.chi.{CHIIssue, HasCHIMsgParameters, Issue}
 import zhujiang.device.AxiDeviceParams
-import utility.{LogUtilsOptions, LogUtilsOptionsKey, PerfCounterOptions, PerfCounterOptionsKey, XSLog, XSPerfLevel}
+import utility.{ChiselDB, FileRegisters, LogUtilsOptions, LogUtilsOptionsKey, PerfCounterOptions, PerfCounterOptionsKey, XSLog, XSPerfLevel}
 import xs.utils.debug.{HardwareAssertionKey, HwaParams}
 import xs.utils.perf.{DebugOptions, DebugOptionsKey}
 import xs.utils.perf.{LogUtilsOptions => ZJLogUtilsOptions, LogUtilsOptionsKey => ZJLogUtilsOptionsKey}
@@ -314,6 +314,8 @@ object TestTopZhuJiangConfig {
   def dualCore: Config = base(2, ZhuJiangNocConfig.DualCoreNocConfig)
 
   def gen(config: Config)(top: Parameters => TestTopZhuJiang)(args: Array[String]): Unit = {
+    ChiselDB.init(false)
+
     val lazyTop = LazyModule(top(config))
     (new ChiselStage).execute(
       args,
@@ -322,6 +324,9 @@ object TestTopZhuJiangConfig {
         FirtoolOption("--disable-annotation-unknown")
       )
     )
+
+    ChiselDB.addToFileRegisters
+    FileRegisters.write("./build")
   }
 }
 
