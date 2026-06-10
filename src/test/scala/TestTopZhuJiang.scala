@@ -4,6 +4,7 @@ import chisel3._
 import chisel3.stage.ChiselGeneratorAnnotation
 import chisel3.util._
 import _root_.circt.stage.{ChiselStage, FirtoolOption}
+import dongjiang.DJParam
 import freechips.rocketchip.amba.axi4._
 import freechips.rocketchip.diplomacy.{AddressSet, IdRange, LazyModule, LazyModuleImp, TransferSizes, ValName}
 import freechips.rocketchip.tile.MaxHartIdBits
@@ -211,6 +212,7 @@ object ZhuJiangNocConfig {
     nodeNidBits = 8,
     nodeAidBits = 3,
     nodeParams = singleCoreNodeParams,
+    djParamsOpt = Some(hnfParams),
     tfbParams = None
   )
 
@@ -218,7 +220,14 @@ object ZhuJiangNocConfig {
     nodeNidBits = 8,
     nodeAidBits = 3,
     nodeParams = dualCoreNodeParams,
+    djParamsOpt = Some(hnfParams),
     tfbParams = None
+  )
+
+  private def hnfParams: DJParam = DJParam(
+    llcSizeInB = 8 * 4 * 64,
+    llcWays = 4,
+    sfWays = 4
   )
 
   private def singleCoreNodeParams: Seq[NodeParam] = Seq(

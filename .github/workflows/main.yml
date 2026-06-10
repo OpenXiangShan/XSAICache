@@ -234,7 +234,7 @@ jobs:
             rm -rf tl-test-new
             git clone --branch feat-zhujiang --single-branch https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
-            sed -i 's/ari.target.*/ari.target = 240/g' ./configs/user.tltest.ini
+            sed -i 's/ari.target.*/ari.target = 100/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
             sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
