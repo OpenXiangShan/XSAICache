@@ -168,9 +168,11 @@ class TestTop_CHIL2(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, ext
       val nodeId = Input(UInt(NODEID_WIDTH.W))
     }))
 
-    val io_l1 = IO(Vec(numCores, new Bundle() {
-      val l2Hint = Valid(new L2ToL1Hint)
-    }))
+    val io_l1 = (l2_nodes.map { l2_node =>
+      IO(new Bundle {
+        val l2Hint = Valid(new L2ToL1Hint()(p.alterPartial { case EdgeInKey => l2_node.node.in.head._2 }))
+      })
+    })
 
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
 

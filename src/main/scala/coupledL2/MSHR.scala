@@ -387,7 +387,7 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
       req_cboClean                                       -> CleanShared,
       req_cboFlush                                       -> CleanInvalid,
       req_cboInval                                       -> MakeInvalid,
-      req_acquirePerm                                    -> MakeUnique,
+      (req_acquirePerm || req_putfull)                   -> MakeUnique,
       req_needT                                          -> ReadUnique,
       req_needB /* Default */                            -> ReadNotSharedDirty
     ))
@@ -461,10 +461,9 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
     mp_release.alias.foreach(_ := 0.U)
     mp_release.vaddr.foreach(_ := 0.U)
     mp_release.isKeyword.foreach(_ := false.B)
-    // if dirty, we must ReleaseData
-    // if accessed, we ReleaseData to keep the data in L3, for future access to be faster
-    // [Access] TODO: consider use a counter
-    mp_release.opcode := 0.U // use chiOpcode
+    // Use chiOpcode for MSHR-issued release tasks in the tl2chi branch.
+    // Use Release instead of 0.U so these tasks are not decoded as AccessAck after Put support.
+    mp_release.opcode := Release
     mp_release.param := Mux(isT(meta.state), TtoN, BtoN)
     mp_release.size := log2Ceil(blockBytes).U
     mp_release.sourceId := 0.U(sourceIdBits.W)
@@ -570,7 +569,7 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
     mp_cbwrdata.alias.foreach(_ := 0.U)
     mp_cbwrdata.vaddr.foreach(_ := 0.U)
     mp_cbwrdata.isKeyword.foreach(_ := false.B)
-    mp_cbwrdata.opcode := 0.U
+    mp_cbwrdata.opcode := Release // Same reason as mp_release.opcode
     mp_cbwrdata.param := 0.U
     mp_cbwrdata.size := log2Ceil(blockBytes).U
     mp_cbwrdata.sourceId := 0.U(sourceIdBits.W)
@@ -734,19 +733,15 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
     mp_grant.isKeyword.foreach(_ := req.isKeyword.getOrElse(false.B))
     mp_grant.opcode := odOpGen(req.opcode)
     mp_grant.param := Mux(
-      req_putfull,
-      0.U,
-      Mux(
-        req_get || req_prefetch,
-        0.U, // Get -> AccessAckData
-        MuxLookup( // Acquire -> Grant
-          req.param,
-          req.param)(
-          Seq(
-            NtoB -> Mux(req_promoteT, toT, toB),
-            BtoT -> toT,
-            NtoT -> toT
-          )
+      req_putfull || req_get || req_prefetch,
+      0.U, // Get, Prefetch -> AccessAckData, Put -> AccessAck
+      MuxLookup( // Acquire -> Grant
+        req.param,
+        req.param)(
+        Seq(
+          NtoB -> Mux(req_promoteT, toT, toB),
+          BtoT -> toT,
+          NtoT -> toT
         )
       )
     )
@@ -808,10 +803,8 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
       accessed = req_putfull || req_acquire || req_get
     )
     mp_grant.metaWen := !cmo_cbo && !denied
-    mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !req_putfull && !denied
+    mp_grant.tagWen := !cmo_cbo && !dirResult.hit && !denied
     mp_grant.dsWen := (req_putfull || gotGrantData || probeDirty && (req_get || req.aliasTask.getOrElse(false.B))) && !denied
-    mp_grant.putData := req.putData
-    mp_grant.usePutData := req_putfull
     mp_grant.fromL2pft.foreach(_ := req.fromL2pft.get)
     mp_grant.needHint.foreach(_ := false.B)
     mp_grant.replTask := !dirResult.hit && !state.w_replResp && !denied
@@ -1352,6 +1345,7 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
   io.msInfo.bits.willFree := will_free
   io.msInfo.bits.isAcqOrPrefetch := req_acquire || req_prefetch
   io.msInfo.bits.isPrefetch := req_prefetch
+  io.msInfo.bits.isPut := req_putfull
   io.msInfo.bits.param := req.param
   io.msInfo.bits.mergeA := mergeA
   io.msInfo.bits.w_grantfirst := state.w_grantfirst

@@ -26,8 +26,26 @@ import org.chipsalliance.cde.config.Parameters
 import xscache.coupledL2._
 import xscache.chi.HasCHIOpcodes
 
+/*
+ * SteerS2ToS3 carries local pipeline steering metadata from RequestArb s2 to MainPipe s3.
+ * Each bit records that s2 has issued a non-blocking read to one task data source.
+ */
+class SteerS2ToS3 extends Bundle {
+  val refillBufRead  = Bool()
+  val releaseBufRead = Bool()
+  val putBufRead     = Bool()
+  val sinkCDataRead  = Bool()
+
+  def assertOH: Unit = {
+    val issuedVec = Seq(refillBufRead || releaseBufRead, putBufRead, sinkCDataRead)
+    assert(PopCount(VecInit(issuedVec)) <= 1.U, "Multiple data source read req issued in the same cycle!")
+  }
+}
+
 class RequestArb(implicit p: Parameters) extends L2Module
   with HasCHIOpcodes {
+
+  require(beatSize == 2)
 
   val io = IO(new Bundle() {
     /* receive incoming tasks */
@@ -50,10 +68,14 @@ class RequestArb(implicit p: Parameters) extends L2Module
     /* send s1 task info to mainpipe to help hint */
     val mshrHintQInfo = ValidIO(new TaskBundle)
     val sinkCHintQInfo = ValidIO(new TaskBundle)
+    /* send s2 steer signals to mainpipe s3 */
+    val steerToPipe_s2 = Output(new SteerS2ToS3)
 
     /* send mshrBuf read request */
     val refillBufRead_s2 = ValidIO(new MSHRBufRead)
     val releaseBufRead_s2 = ValidIO(new MSHRBufRead)
+    /* send channel task dataBuf read request */
+    val putBufRead_s2 = ValidIO(new PutBufRead)
 
     /* status of each pipeline stage */
     val status_s1 = Output(new PipeEntranceStatus) // set & tag of entrance status
@@ -92,12 +114,11 @@ class RequestArb(implicit p: Parameters) extends L2Module
   val s2_ready  = Wire(Bool())
   val mshr_task_s1 = RegInit(0.U.asTypeOf(Valid(new TaskBundle())))
 
-  val s1_put_install = mshr_task_s1.bits.opcode === AccessAck && mshr_task_s1.bits.usePutData
   val s1_needs_replRead = mshr_task_s1.valid && mshr_task_s1.bits.fromA && mshr_task_s1.bits.replTask && (
-    mshr_task_s1.bits.opcode === Grant ||
-    mshr_task_s1.bits.opcode === GrantData ||
+    mshr_task_s1.bits.opcode === Grant         ||
+    mshr_task_s1.bits.opcode === GrantData     ||
     mshr_task_s1.bits.opcode === AccessAckData ||
-    s1_put_install ||
+    mshr_task_s1.bits.opcode === AccessAck     || // For MSHR Task caused by Put.
     mshr_task_s1.bits.opcode === HintAck
   )
 
@@ -107,9 +128,6 @@ class RequestArb(implicit p: Parameters) extends L2Module
   assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= AccessAckData || mshr_task_s1.bits.dsWen,
     "replTask of AccessAckData with no DataStorage write was not expected")
 
-  assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= AccessAck || !mshr_task_s1.bits.usePutData || mshr_task_s1.bits.dsWen,
-    "replTask of AccessAck Put install with no DataStorage write was not expected")
-  
   assert(!s1_needs_replRead || mshr_task_s1.bits.opcode =/= HintAck || mshr_task_s1.bits.dsWen,
     "replTask of HintAck with no DataStorage write was not expected")
 
@@ -224,13 +242,15 @@ class RequestArb(implicit p: Parameters) extends L2Module
   // MSHR task
   val mshrTask_s2 = task_s2.valid && task_s2.bits.mshrTask
   val mshrTask_s2_a_upwards = task_s2.bits.fromA &&
-    (task_s2.bits.opcode === GrantData || task_s2.bits.opcode === Grant && task_s2.bits.dsWen ||
-      task_s2.bits.opcode === AccessAckData || task_s2.bits.opcode === HintAck && task_s2.bits.dsWen)
+    ( task_s2.bits.opcode === GrantData     ||
+      task_s2.bits.opcode === Grant         && task_s2.bits.dsWen ||
+      task_s2.bits.opcode === AccessAck     || // for mshr grant task caused by put
+      task_s2.bits.opcode === AccessAckData ||
+      task_s2.bits.opcode === HintAck       && task_s2.bits.dsWen)
   // For GrantData, read refillBuffer
   // Caution: GrantData-alias may read DataStorage or ReleaseBuf instead
-  // Release-replTask normally reads refillBuf and writes that data into DS.
-  // Replacement-safe PutFullData install carries its final DS data in-task instead.
-  val releaseRefillData = task_s2.bits.replTask && !task_s2.bits.usePutData && (
+  // Release-replTask also read refillBuf and then write to DS
+  val releaseRefillData = task_s2.bits.replTask && (
     task_s2.bits.toTXREQ && (
       task_s2.bits.chiOpcode.get === WriteBackFull ||
       task_s2.bits.chiOpcode.get === WriteEvictFull ||
@@ -264,7 +284,18 @@ class RequestArb(implicit p: Parameters) extends L2Module
     task_s2.bits.mshrId
   )
 
-  require(beatSize == 2)
+  /* putBuffer read request generation */
+  io.putBufRead_s2.valid := task_s2.valid && task_s2.bits.fromA && !task_s2.bits.mshrTask && task_s2.bits.opcode === PutFullData
+  io.putBufRead_s2.bits.id := task_s2.bits.bufIdx
+
+  /* s2 steer signals to s3 */
+  private val steer_s2 = RegInit(0.U.asTypeOf(io.steerToPipe_s2))
+  steer_s2.refillBufRead := io.refillBufRead_s2.valid
+  steer_s2.releaseBufRead := io.releaseBufRead_s2.valid
+  steer_s2.putBufRead := io.putBufRead_s2.valid
+  steer_s2.sinkCDataRead := false.B
+
+  io.steerToPipe_s2 := steer_s2
 
   /* status of each pipeline stage */
   io.status_s1.sets := VecInit(Seq(C_task.set, B_task.set, io.ASet, mshr_task_s1.bits.set))
@@ -288,6 +319,8 @@ class RequestArb(implicit p: Parameters) extends L2Module
   }
 
   dontTouch(io)
+
+  io.steerToPipe_s2.assertOH
 
   // Performance counters
   XSPerfAccumulate("mshr_req", s0_fire)

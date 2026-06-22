@@ -53,6 +53,7 @@ class TestTopMatrix(
   val clogIdDownstream = "l3top"
 
   def createClientNode(name: String, sources: Int) = {
+    implicit val valName: ValName = ValName(name)
     TLClientNode(Seq(
       TLMasterPortParameters.v2(
         masters = Seq(
