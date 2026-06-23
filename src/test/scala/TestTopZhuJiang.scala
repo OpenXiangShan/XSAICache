@@ -99,9 +99,9 @@ class TestTopZhuJiang(
   val zjMemMaster = AXI4MasterNode(Seq(AXI4MasterPortParameters(
     masters = Seq(AXI4MasterParameters(
       name = "zhujiang-ddr",
-      id = IdRange(0, 4096),
+      id = IdRange(0, 8),
       aligned = true,
-      maxFlight = Some(16)
+      maxFlight = Some(1)
     ))
   )))
 
@@ -166,7 +166,7 @@ class TestTopZhuJiang(
 
     require(zj.ccnIO.size >= numCores, s"ZhuJiang exposes ${zj.ccnIO.size} CCN IOs, but $numCores cores are requested")
     l2_nodes.zipWithIndex.foreach { case (l2, i) =>
-      connectCHIToZhuJiang(l2.module.io.decoupledCHI.get, zj.ccnIO(i), ccNodes(i))
+      connectCHIToZhuJiang(l2.module.io.decoupledCHI.get, zj.ccnIO(i), ccNodes(i), p)
 
       l2.module.io.nodeID := ccNodes(i).nodeId.U
       l2.module.io.hartId := i.U
@@ -187,7 +187,7 @@ class TestTopZhuJiang(
     zj.io.ramctl := DontCare
     val (zjMemAxi, _) = zjMemMaster.out.head
     require(zj.ddrIO.nonEmpty, "ZhuJiang test top expects at least one DDR AXI port")
-    connectZJMemToAXI4(zj.ddrIO.head, zjMemAxi)
+    connectZJToAXI4(zj.ddrIO.head, zjMemAxi)
     mem.makeIOs()(ValName("mem_axi"))
     zj.ddrIO.drop(1).foreach { axi => axi := DontCare }
     zj.cfgIO.foreach { axi => axi := DontCare }
@@ -269,6 +269,8 @@ object TestTopZhuJiangConfig {
       ways = 4,
       sets = 128,
       clientCaches = Seq.fill(numCores)(L1Param(aliasBitsOpt = Some(2))),
+      dataCheck = None,
+      enablePoison = false,
       sam = Seq(AddressSet.everything -> 0)
     )
     case LogUtilsOptionsKey => LogUtilsOptions(
