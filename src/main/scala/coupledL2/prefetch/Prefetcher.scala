@@ -269,7 +269,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     vbop.get.io.enable := vbop_en
     vbop.get.io.pfCtrlOfDelayLatency := delay_latency
     vbop.get.io.train <> train
-    vbop.get.io.train.valid := train.valid && (train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     vbop.get.io.resp <> resp
     vbop.get.io.resp.valid := resp.valid && resp.bits.isBOP
     vbop.get.io.tlb_req <> io.tlb_req
@@ -278,7 +277,6 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     pbop.get.io.enable := pbop_en
     pbop.get.io.pfCtrlOfDelayLatency := delay_latency
     pbop.get.io.train <> train
-    pbop.get.io.train.valid := train.valid && (train.bits.reqsource =/= MemReqSource.L1DataPrefetch.id.U)
     pbop.get.io.resp <> resp
     pbop.get.io.resp.valid := resp.valid && resp.bits.isPBOP
   }
