@@ -79,6 +79,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     /* Snoop task from arbiter at stage 2 */
     val taskFromArb_s2 = Flipped(ValidIO(new TaskBundle()))
 
+    /* status of s2 and s3 */
+    val pipeStatusVec = Flipped(Vec(2, ValidIO(new PipeStatus)))
+
     val ATag        = Output(UInt(tagBits.W))
     val ASet        = Output(UInt(setBits.W))
 
@@ -172,8 +175,12 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   }
   def noFreeWay(task: TaskBundle): Bool = noFreeWayForSet(task.set)
 
+  val pfThrottleByMSHR = RegNext(PopCount(io.pipeStatusVec.map(_.valid) ++ io.mshrInfo.map(_.valid)) >= (mshrsAll - 3).U)
+
+  def prefetchBlocked(task: TaskBundle): Bool = task.fromA && task.opcode === Hint && pfThrottleByMSHR
+
   // flow not allowed when full, or entries might starve
-  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in)
+  val canFlow = flow.B && !full && !conflict(in) && !chosenQValid && !Cat(io.mainPipeBlock).orR && !noFreeWay(in) && !prefetchBlocked(in)
   val doFlow  = canFlow && io.out.ready
 
   //  val depMask    = buffer.map(e => e.valid && sameAddr(io.in.bits, e.task))
@@ -203,10 +210,10 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   //!! TODO: we can also remove those that duplicate with mainPipe
 
   /* ======== Alloc ======== */
-  io.in.ready   := !full || doFlow || mergeA || dup
+  io.in.ready   := !prefetchBlocked(in) && (!full || doFlow) || mergeA || dup
 
   val insertOH = MaskToOH(buffer.map(!_.valid))
-  val alloc = !full && io.in.valid && !doFlow && !dup && !mergeA
+  val alloc = !full && io.in.valid && !prefetchBlocked(in) && !doFlow && !dup && !mergeA
   buffer.zip(insertOH.asBools).foreach { case (entry, sel) =>
     when(alloc && sel){
       val mpBlock = Cat(io.mainPipeBlock).orR
@@ -231,7 +238,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   /* ======== Issue ======== */
   issueArb.io.in zip buffer foreach {
     case(in, e) =>
-      in.valid := e.valid && e.rdy
+      in.valid := e.valid && e.rdy && !prefetchBlocked(e.task)
       in.bits  := e
   }
 
@@ -290,7 +297,7 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // when entry.rdy is no longer true,
   // we cancel req in chosenQ, with the entry still held in buffer to issue later
 //  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
-  val cancel = !Mux1H(chosenQ.io.deq.bits.idOH, buffer.map(_.rdy))
+  val cancel = !Mux1H(chosenQ.io.deq.bits.idOH, buffer.map(e => e.rdy && !prefetchBlocked(e.task)))
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
