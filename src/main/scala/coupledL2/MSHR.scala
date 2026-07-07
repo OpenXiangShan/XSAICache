@@ -811,6 +811,9 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
     mp_grant.cmoTask := cmo_cbo
     mp_grant.wayMask := 0.U(cacheParams.ways.W)
     mp_grant.mshrRetry := !state.s_retry
+    mp_grant.ameChannel.foreach(_ := req.ameChannel.getOrElse(0.U))
+    mp_grant.ameIndex.foreach(_ := req.ameIndex.getOrElse(0.U))
+    mp_grant.matrixTask.foreach(_ := req.matrixTask.getOrElse(false.B))
     mp_grant.reqSource := 0.U(MemReqSource.reqSourceBits.W)
 
     // Add merge grant task for Acquire and late Prefetch
