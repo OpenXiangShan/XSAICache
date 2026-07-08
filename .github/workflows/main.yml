@@ -6,9 +6,9 @@ name: CI
 on:
   # Triggers the workflow on push or pull request events but only for the main branch
   push:
-    branches: [ master, chi-coupledl2 ]
+    branches: [ master ]
   pull_request:
-    branches: [ master, chi-coupledl2 ]
+    branches: [ master ]
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -177,6 +177,43 @@ jobs:
             rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
+
+      - name: Matrix trace tests for CHI version
+        run: |
+            rm -rf tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            git fetch origin test-xsaicache
+            git checkout b4a641e19b
+            rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
+
+            make compile
+            rm -rf ./dut/XSCache/build/openllc
+            make -C dut/XSCache test-top-matrix \
+              NUM_CORE=1 NUM_TL_UL=0 NUM_M_AGENT=1 NUM_SLICE=1 \
+              WITH_CHISELDB=1 WITH_TLLOG=1
+            make openLLC-verilate SUFFIX=xscache_trace THREADS_BUILD=4
+            make tltest-prepare-v3-openLLC SUFFIX=xscache_trace CXX_COMPILER=clang++-17
+            make tltest-config-openLLC-test-matrix-trace SUFFIX=xscache_trace
+            make tltest-build SUFFIX=xscache_trace THREADS_BUILD=4
+
+            for trace in \
+              high-concurrency-nofence-1000.ops \
+              matrix-trace-64sets.ops \
+              random-chaos-1000.ops \
+              st16_mr16_ev_mw_repeat8.trace
+            do
+              name="${trace%.*}"
+              run_dir="./run/matrix-${name}"
+              rm -rf "${run_dir}"
+              mkdir -p ./run
+              cp -a ./main/build_xscache_trace "${run_dir}"
+              sed -i "s#trace.filepath[[:space:]]*=.*#trace.filepath              = ${PWD}/traces/${trace}#g" "${run_dir}/tltest.ini"
+              bash ./scripts/run_v3lt.sh "${run_dir}"
+              grep -q "pending_entries=0" "${run_dir}/tltest_v3lt.log"
+              grep -q "tl-test subsystem finalized" "${run_dir}/tltest_v3lt.log"
+              rm -f "${run_dir}"/*.vcd "${run_dir}"/*.fst "${run_dir}"/*.db
+            done
             
       - name: Tar up artifacts of Unit Test for CHI version
         if: always()
