@@ -69,7 +69,7 @@ test-top-l2l3-openllc:
 	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopOpenLLC_SingleCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
 
 test-top-matrix:
-	mill -i XSCache.test.runMain xscache.openLLC.TestTopMatrix -td $(BUILD_DIR_LLC) $(MATRIX_TOP_ARGS) --target systemverilog --split-verilog
+	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopMatrix -td $(BUILD_DIR_LLC) $(MATRIX_TOP_ARGS) --target systemverilog --split-verilog
 
 test-top-l2l3l2-openllc:
 	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopOpenLLC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
