@@ -93,6 +93,7 @@ jobs:
     env:
       RUN_ARCHIVE: xscache-chi-test-run-${{ github.sha }}
       RUN_ARCHIVE_CHI: xscache-chi-test-run-${{ github.sha }}.tar.gz
+      RUN_ARCHIVE_MATRIX: xscache-chi-test-run-${{ github.sha }}-matrix.tar.gz
       VERILATOR_ARCHIVE: verilator-ubuntu-22.04-clang-17.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -178,6 +179,12 @@ jobs:
             make openLLC-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
             rm -rf run/*.vcd run/*.fst run/*.log run/*.db
 
+      - name: Tar up artifacts of Unit Test for CoupledL2 + OpenLLC
+        if: always()
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
+
       - name: Matrix trace tests for CHI version
         run: |
             rm -rf tl-test-new
@@ -215,11 +222,11 @@ jobs:
               rm -f "${run_dir}"/*.vcd "${run_dir}"/*.fst "${run_dir}"/*.db
             done
             
-      - name: Tar up artifacts of Unit Test for CHI version
+      - name: Tar up artifacts of Matrix trace tests
         if: always()
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_MATRIX }} ./tl-test-new/run
       
       - name: Upload artifacts of Unit Test
         if: always()
