@@ -13,7 +13,7 @@ import org.chipsalliance.cde.config.{Config, Parameters}
 import xijiang.{NodeParam, NodeType}
 import xscache.common.{AliasField, BankBitsKey, PrefetchField}
 import xscache.coupledL2.{CoupledL2, EdgeInKey, EnableL2DecoupledDownstreamCHI, L1Param, L2ParamKey, L2ToL1Hint}
-import xscache.chi.{CHIIssue, HasCHIMsgParameters, Issue}
+import xscache.chi.{CHIDataCheckKey, CHIIssue, CHIPoisonKey, HasCHIMsgParameters, Issue}
 import zhujiang.device.AxiDeviceParams
 import utility.{ChiselDB, FileRegisters, LogUtilsOptions, LogUtilsOptionsKey, PerfCounterOptions, PerfCounterOptionsKey, XSLog, XSPerfLevel}
 import xs.utils.debug.{HardwareAssertionKey, HwaParams}
@@ -71,6 +71,8 @@ class TestTopZhuJiang(
       hartId = i
     )
     case CHIIssue => issue
+    case CHIDataCheckKey => p(CHIDataCheckKey)
+    case CHIPoisonKey => p(CHIPoisonKey)
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -262,6 +264,8 @@ object TestTopZhuJiangConfig {
   private def base(numCores: Int, zjParameters: ZJParameters): Config = new Config((site, _, up) => {
     case EnableL2DecoupledDownstreamCHI => true
     case CHIIssue => Issue.Eb
+    case CHIDataCheckKey => "none"
+    case CHIPoisonKey => false
     case BankBitsKey => 0
     case MaxHartIdBits => log2Up(numCores)
     case ZJParametersKey => zjParameters
