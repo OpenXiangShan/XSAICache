@@ -418,6 +418,7 @@ Usage: TestTopMatrix [<--option> <values>]
       enableTLLog = enableTLLog,
       enableCHILog = enableCHILog,
       elaboratedTopDown = enablePerf,
+      enableMCP2 = false,
       FPGAPlatform = FPGAPlatform,
       dataCheck = Some("oddparity"),
       sam = Seq(AddressSet.everything -> 33)
