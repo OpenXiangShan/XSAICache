@@ -72,10 +72,10 @@ class DataStorage(implicit p: Parameters) extends L2Module {
     way = 1,
     dataSplit = dataSRAMSplit,
     singlePort = true,
-    readMCP2 = true,
+    readMCP2 = enableMCP2,
     hasMbist = p(L2ParamKey).hasMbist,
     hasSramCtl = p(L2ParamKey).hasSramCtl,
-    extraHold = true,
+    extraHold = enableMCP2,
     withClockGate = true
   ))
   array.io_en := io.en
@@ -94,7 +94,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
   }
   arrayWrite.data := arrayWriteData
 
-  val arrayRead = array.io.r.resp.data(0)
+  val arrayReadDirect = array.io.r.resp.data(0)
+  val arrayRead = {if(enableMCP2) arrayReadDirect else RegNext(arrayReadDirect)}
   val dataRead = Wire(new DSBlock)
   val bankDataRead = if (enableDataECC) {
     Cat(VecInit(Seq.tabulate(dataBankSplit)(i => arrayRead.data(encBankBits * (i + 1) - 1, encBankBits * i)(dataBankBits - 1, 0))))
@@ -118,8 +119,8 @@ class DataStorage(implicit p: Parameters) extends L2Module {
 
   // for timing, we set this as multicycle path
   // s3 read, s4 pass and s5 to destination
-  // (if not MCP2, then we need to latch at s4)
-  io.rdata := {if(enableMCP2) dataRead else RegNext(dataRead)}
+  // (if not MCP2, then we need to latch at s4, then use s4_reg for dataRead and error calculation)
+  io.rdata := dataRead
   io.error := error
 
   if (enableMCP2) {
