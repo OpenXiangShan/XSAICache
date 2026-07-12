@@ -97,6 +97,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
     d.data := data
     d.corrupt := task.corrupt || task.denied
     d.echo.lift(IsKeywordKey).foreach(_ := false.B)
+    d.user.lift(AmeIndexKey).foreach(_ := task.ameIndex.getOrElse(0.U))
     d
   }
 
