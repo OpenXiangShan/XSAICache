@@ -277,6 +277,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends CoupledL2M
     reqWordIdx,
     List.tabulate(words)(i => i.U -> rdata((i + 1) * wordBits - 1, i * wordBits))
   )
+  io.resp.bits.user := req.user
 
   txdat.valid := !s_ncbwrdata && w_dbidresp
   txdat.bits := 0.U.asTypeOf(txdat.bits.cloneType)

@@ -72,7 +72,7 @@ case object AmeChannelKey extends ControlKey[UInt](name = "AmeChannel")
 case class AmeChannelField() extends BundleField[UInt](AmeChannelKey, Output(UInt(4.W)), _ := 0.U(4.W))
 
 case object AmeIndexKey extends ControlKey[UInt](name = "AmeIndex")
-case class AmeIndexField() extends BundleField[UInt](AmeIndexKey, Output(UInt(7.W)), _ := 0.U(7.W))
+case class AmeIndexField() extends BundleField[UInt](AmeIndexKey, Output(UInt(64.W)), _ := 0.U(64.W))
 
 //memblock pass pc of load_miss to l2
 case object PCKey extends ControlKey[UInt]("pc")
