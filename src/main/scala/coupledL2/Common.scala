@@ -68,7 +68,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
 }
 
 class MatrixDataBundle(implicit p: Parameters) extends L2Bundle {
-  val sourceId = UInt(7.W)
+  val sourceId = UInt(64.W)
   val data = new DSBlock()
   val channel = UInt(3.W)
 }
@@ -133,7 +133,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val cmoAll = Bool()  // cmo without address but to flush whole L2$ to memory 
 
   val ameChannel = Option.when(enableMatrix)(UInt(4.W))
-  val ameIndex = Option.when(enableMatrix)(UInt(7.W))
+  val ameIndex = Option.when(enableMatrix)(UInt(64.W))
   val matrixTask = Option.when(enableMatrix)(Bool())
 
   // for TopDown Monitor (# TopDown)
