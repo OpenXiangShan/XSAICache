@@ -87,7 +87,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   assert(PopCount(Cat(io.mshrHintQInfo.valid && mshr_s1.mergeA, io.mshrHintQInfo.valid && !mshr_s1.mergeA, io.sinkCHintQInfo.valid)) <= 1.U)
   enqBits_s1.isKeyword := Mux(mshr_s1.mergeA, mshrMerge_s1.isKeyword.getOrElse(false.B), mshr_s1.isKeyword.getOrElse(false.B)) 
   enqBits_s1.isGrantData := mshr_GrantData_s1
-  enqBits_s1.hasData := mshr_GrantData_s1 || mshr_AccessAckData_s1
+  // Matrix AccessAckData uses the one-beat MatrixDataOut path.
+  enqBits_s1.hasData := mshr_GrantData_s1 || (mshr_AccessAckData_s1 && !mshr_s1.matrixTask.getOrElse(false.B))
 
   // Hint for "chnTask Hit" will fire@s3
   val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === Grant
@@ -99,7 +100,8 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   enqBits_s3.source := task_s3.bits.sourceId
   enqBits_s3.isKeyword := task_s3.bits.isKeyword.getOrElse(false.B)
   enqBits_s3.isGrantData := chn_GrantData_s3
-  enqBits_s3.hasData := chn_GrantData_s3 || chn_AccessAckData_s3
+  // Matrix AccessAckData uses the one-beat MatrixDataOut path.
+  enqBits_s3.hasData := chn_GrantData_s3 || (chn_AccessAckData_s3 && !task_s3.bits.matrixTask.getOrElse(false.B))
 
   // ==================== Hint Queue ====================
   val hintEntries = mshrsAll
