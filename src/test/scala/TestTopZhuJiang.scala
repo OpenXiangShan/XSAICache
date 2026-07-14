@@ -6,7 +6,7 @@ import chisel3.util._
 import _root_.circt.stage.{ChiselStage, FirtoolOption}
 import dongjiang.DJParam
 import freechips.rocketchip.amba.axi4._
-import freechips.rocketchip.diplomacy.{AddressSet, IdRange, LazyModule, LazyModuleImp, TransferSizes, ValName}
+import freechips.rocketchip.diplomacy.{AddressSet, DisableMonitors, IdRange, LazyModule, LazyModuleImp, TransferSizes, ValName}
 import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.{Config, Parameters}
@@ -322,7 +322,7 @@ object TestTopZhuJiangConfig {
   def gen(config: Config)(top: Parameters => TestTopZhuJiang)(args: Array[String]): Unit = {
     ChiselDB.init(false)
 
-    val lazyTop = LazyModule(top(config))
+    val lazyTop = DisableMonitors(p => LazyModule(top(p)))(config)
     (new ChiselStage).execute(
       args,
       Seq(
