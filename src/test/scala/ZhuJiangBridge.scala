@@ -204,6 +204,7 @@ trait HasCHIToZhuJiangBridge {
     dst.TgtID := src.tgtID
     dst.SrcID := src.srcID
     dst.TxnID := src.txnID
+    dst.HomeNID := src.homeNID
     dst.Opcode := src.opcode
     dst.RespErr := src.respErr
     dst.Resp := src.resp
