@@ -34,6 +34,7 @@ BUILD_DIR_L2 = ./build/coupledl2
 BUILD_DIR_LLC = ./build/openllc
 BUILD_DIR_ZJ_SINGLECORE = ./build/zj_singlecore
 BUILD_DIR_ZJ_DUALCORE = ./build/zj_dualcore
+BUILD_DIR_ZJ_MATRIX = ./build/zj_matrix
 TOP_V_L2 = $(BUILD_DIR_L2)/$(TOP).sv
 TOP_V_LLC = $(BUILD_DIR_LLC)/$(TOP).sv
 MEM_GEN = ./scripts/vlsi_mem_gen
@@ -79,6 +80,9 @@ test-top-zhujiang-singlecore:
 
 test-top-zhujiang-dualcore:
 	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestTopZhuJiang_DualCore -td $(BUILD_DIR_ZJ_DUALCORE) --target systemverilog --split-verilog
+
+test-top-zhujiang-matrix:
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestTopZhuJiang_Matrix -td $(BUILD_DIR_ZJ_MATRIX) --target systemverilog --split-verilog
 
 clean:
 	rm -rf ./build

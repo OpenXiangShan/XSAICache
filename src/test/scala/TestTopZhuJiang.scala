@@ -12,7 +12,7 @@ import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config.{Config, Parameters}
 import xijiang.{NodeParam, NodeType}
 import xscache.common.{AliasField, BankBitsKey, PrefetchField}
-import xscache.coupledL2.{CoupledL2, EdgeInKey, EnableL2DecoupledDownstreamCHI, L1Param, L2ParamKey, L2ToL1Hint}
+import xscache.coupledL2.{AmeIndexField, CoupledL2, EdgeInKey, EnableL2DecoupledDownstreamCHI, EnableMatrix, L1Param, L2ParamKey, L2ToL1Hint, MatrixDataBundle, MatrixField}
 import xscache.chi.{CHIDataCheckKey, CHIIssue, CHIPoisonKey, HasCHIMsgParameters, Issue}
 import zhujiang.device.AxiDeviceParams
 import utility.{ChiselDB, FileRegisters, LogUtilsOptions, LogUtilsOptionsKey, PerfCounterOptions, PerfCounterOptionsKey, XSLog, XSPerfLevel}
@@ -24,6 +24,7 @@ import xs.utils.perf.{PerfCounterOptions => ZJPerfCounterOptions, PerfCounterOpt
 class TestTopZhuJiang(
   numCores: Int = 1,
   numULAgents: Int = 0,
+  numMAgents: Int = 0,
   banks: Int = 1,
   issue: String = Issue.Eb
 )(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
@@ -64,8 +65,27 @@ class TestTopZhuJiang(
     }
   }
 
+  val matrix_nodes = (0 until numCores).map { i =>
+    (0 until numMAgents).map { j =>
+      TLClientNode(Seq(
+        TLMasterPortParameters.v2(
+          masters = Seq(TLMasterParameters.v1(
+            name = s"matrix${i}_$j",
+            sourceId = IdRange(0, 32)
+          )),
+          channelBytes = TLChannelBeatBytes(l2Params.blockBytes),
+          minLatency = 1,
+          echoFields = Nil,
+          requestFields = Seq(MatrixField(2), AmeIndexField()),
+          responseKeys = l2Params.respKey
+        )
+      ))(ValName(s"matrix${i}_$j"))
+    }
+  }
+
   val l2_nodes = (0 until numCores).map(i => LazyModule(new CoupledL2()(new Config((site, here, up) => {
     case EnableL2DecoupledDownstreamCHI => true
+    case EnableMatrix => numMAgents > 0
     case L2ParamKey => l2Params.copy(
       name = s"L2_$i",
       hartId = i
@@ -117,6 +137,10 @@ class TestTopZhuJiang(
       l1xbar := TLBuffer() := l1i
     }
 
+    matrix_nodes(i).foreach { matrix =>
+      l1xbar := TLBuffer() := matrix
+    }
+
     l2.managerNode := TLXbar() :=* bankBinders(i) :*= l2.node :*= l1xbar
 
     val mmioClientNode = TLClientNode(Seq(
@@ -164,6 +188,12 @@ class TestTopZhuJiang(
       })
     }
 
+    val matrixDataOut = if (numMAgents > 0) {
+      Some(IO(Vec(numCores, Vec(banks, DecoupledIO(new MatrixDataBundle())))))
+    } else {
+      None
+    }
+
     val zj = withClockAndReset(clock, reset) { Module(new Zhujiang) }
 
     require(zj.ccnIO.size >= numCores, s"ZhuJiang exposes ${zj.ccnIO.size} CCN IOs, but $numCores cores are requested")
@@ -178,6 +208,7 @@ class TestTopZhuJiang(
       l2.module.io.debugTopDown.robHeadPaddr.valid := false.B
       l2.module.io.debugTopDown.robHeadPaddr.bits := 0.U
       l2.module.io.l2_hint <> io_l1(i).l2Hint
+      matrixDataOut.foreach(_(i) <> l2.module.io.matrixDataOut.get)
       l2.module.io.l2Flush.foreach(_ := false.B)
       l2.module.io.cpu_wfi.foreach(_ := false.B)
       l2.module.io.dft.foreach(_ := DontCare)
@@ -202,6 +233,11 @@ class TestTopZhuJiang(
     l1i_nodes.zipWithIndex.foreach { case (core, i) =>
       core.zipWithIndex.foreach { case (node, j) =>
         node.makeIOs()(ValName(s"master_ul_port_${i}_$j"))
+      }
+    }
+    matrix_nodes.zipWithIndex.foreach { case (core, i) =>
+      core.zipWithIndex.foreach { case (node, j) =>
+        node.makeIOs()(ValName(s"master_m_port_${i}_$j"))
       }
     }
 
@@ -348,6 +384,15 @@ object TestTopZhuJiang_DualCore extends App {
   TestTopZhuJiangConfig.gen(TestTopZhuJiangConfig.dualCore)(p => new TestTopZhuJiang(
     numCores = 2,
     numULAgents = 2,
+    banks = 1
+  )(p))(args)
+}
+
+object TestTopZhuJiang_Matrix extends App {
+  TestTopZhuJiangConfig.gen(TestTopZhuJiangConfig.singleCore)(p => new TestTopZhuJiang(
+    numCores = 1,
+    numULAgents = 0,
+    numMAgents = 1,
     banks = 1
   )(p))(args)
 }
