@@ -253,8 +253,10 @@ jobs:
       - name: Matrix trace tests for CoupledL2 + ZhuJiang
         run: |
             rm -rf tl-test-new
-            git clone --branch feat-zhujiang --single-branch https://github.com/OpenXiangShan/tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
             cd ./tl-test-new
+            git checkout --detach a236a69b6bcbc6655e58c5572ff954d0f5c3c796
+            test "$(git rev-parse HEAD)" = "a236a69b6bcbc6655e58c5572ff954d0f5c3c796"
             rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
 
             make -C ./dut/XSCache test-top-zhujiang-matrix
@@ -267,18 +269,21 @@ jobs:
             verilator_include="${verilator_root}/include"
             test -d "${verilator_include}"
 
-            filelist="${PWD}/zj_matrix.f"
-            {
-              find "${rtl_dir}" -type f \( -name '*.v' -o -name '*.sv' \) | sort
-              find "${rtl_dir}" -type d | sort | sed 's#^#-I#'
-            } > "${filelist}"
-            test -s "${filelist}"
+            mapfile -t rtl_files < <(find "${rtl_dir}" -type f \( -name '*.v' -o -name '*.sv' \) | sort)
+            mapfile -t rtl_dirs < <(find "${rtl_dir}" -type d | sort)
+            test "${#rtl_files[@]}" -gt 0
+
+            include_args=()
+            for dir in "${rtl_dirs[@]}"; do
+              include_args+=("-I${dir}")
+            done
 
             rm -rf "${verilated_dir}" "${build_dir}" ./run
             mkdir -p "${verilated_dir}" "${build_dir}" ./run
+            printf '%s\n' "${rtl_files[@]}" "${include_args[@]}" > "${verilated_dir}/verilator-inputs.f"
 
             verilator --trace-fst --cc --build --lib-create vltdut \
-              --Mdir "${verilated_dir}" -f "${filelist}" \
+              --Mdir "${verilated_dir}" -f "${verilated_dir}/verilator-inputs.f" \
               -Wno-fatal --top TestTop --build-jobs 4 --verilate-jobs 4 \
               -DSIM_TOP_MODULE_NAME=TestTop
 
@@ -305,9 +310,16 @@ jobs:
               cp "${build_dir}/tltest_portgen.so" "${run_dir}/"
               cp "${build_dir}/tltest.ini" "${run_dir}/"
               sed -i "s#trace.filepath[[:space:]]*=.*#trace.filepath              = ${PWD}/traces/${trace}#g" "${run_dir}/tltest.ini"
+              grep -Fq "${PWD}/traces/${trace}" "${run_dir}/tltest.ini"
               bash ./scripts/run_v3lt.sh "${run_dir}"
-              grep -q "pending_entries=0" "${run_dir}/tltest_v3lt.log"
-              grep -q "tl-test subsystem finalized" "${run_dir}/tltest_v3lt.log"
+              log="${run_dir}/tltest_v3lt.log"
+              grep -q "pending_entries=0" "${log}"
+              grep -q "tl-test subsystem finalized" "${log}"
+              summary=$(grep -F "Trace summary:" "${log}" | tail -n 1)
+              sent=$(sed -nE 's/.*sent\{R\/W\/E\}=([0-9]+\/[0-9]+\/[0-9]+).*/\1/p' <<<"${summary}")
+              recv=$(sed -nE 's/.*recv\{R\/W\/E\}=([0-9]+\/[0-9]+\/[0-9]+).*/\1/p' <<<"${summary}")
+              test -n "${sent}"
+              test "${sent}" = "${recv}"
               rm -f "${run_dir}"/*.vcd "${run_dir}"/*.fst "${run_dir}"/*.db
             done
 
