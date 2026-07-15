@@ -44,7 +44,8 @@ class TopDownMonitor()(implicit p: Parameters) extends LLCModule with HasCHIOpco
                               else Cat(ms.bits.tag, ms.bits.set, i.U(bankBits - 1, 0))
             val pBlockAddr  = (pAddr.bits >> 6.U).asUInt
 
-            val isMiss = ms.valid && ms.bits.is_miss && (ms.bits.opcode === ReadNotSharedDirty || ms.bits.opcode === ReadUnique)
+            val isMiss = ms.valid && ms.bits.is_miss &&
+              (ms.bits.opcode === ReadOnce || ms.bits.opcode === ReadNotSharedDirty || ms.bits.opcode === ReadUnique)
             pAddr.valid && msBlockAddr === pBlockAddr && isMiss
         }
     }
