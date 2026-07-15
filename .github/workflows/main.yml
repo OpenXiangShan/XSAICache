@@ -267,20 +267,18 @@ jobs:
             verilator_include="${verilator_root}/include"
             test -d "${verilator_include}"
 
-            mapfile -t rtl_files < <(find "${rtl_dir}" -type f \( -name '*.v' -o -name '*.sv' \) | sort)
-            mapfile -t rtl_dirs < <(find "${rtl_dir}" -type d | sort)
-            test "${#rtl_files[@]}" -gt 0
-
-            include_args=()
-            for dir in "${rtl_dirs[@]}"; do
-              include_args+=("-I${dir}")
-            done
+            filelist="${PWD}/zj_matrix.f"
+            {
+              find "${rtl_dir}" -type f \( -name '*.v' -o -name '*.sv' \) | sort
+              find "${rtl_dir}" -type d | sort | sed 's#^#-I#'
+            } > "${filelist}"
+            test -s "${filelist}"
 
             rm -rf "${verilated_dir}" "${build_dir}" ./run
             mkdir -p "${verilated_dir}" "${build_dir}" ./run
 
             verilator --trace-fst --cc --build --lib-create vltdut \
-              --Mdir "${verilated_dir}" "${rtl_files[@]}" "${include_args[@]}" \
+              --Mdir "${verilated_dir}" -f "${filelist}" \
               -Wno-fatal --top TestTop --build-jobs 4 --verilate-jobs 4 \
               -DSIM_TOP_MODULE_NAME=TestTop
 
