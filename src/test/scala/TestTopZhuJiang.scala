@@ -311,6 +311,8 @@ object TestTopZhuJiangConfig {
       clientCaches = Seq.fill(numCores)(L1Param(aliasBitsOpt = Some(2))),
       dataCheck = None,
       enablePoison = false,
+      bufferableNC = false,
+      endpointOrderNC = true,
       sam = Seq(AddressSet.everything -> 0)
     )
     case LogUtilsOptionsKey => LogUtilsOptions(

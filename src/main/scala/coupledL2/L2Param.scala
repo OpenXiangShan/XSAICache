@@ -144,6 +144,9 @@ case class L2Param(
   // DataCheck
   dataCheck: Option[String] = Some("oddparity"),
   enablePoison: Boolean = true,
+  // MMIOBridge
+  bufferableNC: Boolean = true,
+  endpointOrderNC: Boolean = false,
 
   // Network layer SAM
   sam: Seq[(AddressSet, Int)] = Seq(AddressSet.everything -> 0),
