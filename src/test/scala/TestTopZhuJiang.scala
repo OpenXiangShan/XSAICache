@@ -91,8 +91,8 @@ class TestTopZhuJiang(
       hartId = i
     )
     case CHIIssue => issue
-    case CHIDataCheckKey => p(CHIDataCheckKey)
-    case CHIPoisonKey => p(CHIPoisonKey)
+    case CHIDataCheckKey => l2Params.dataCheck.getOrElse("none")
+    case CHIPoisonKey => l2Params.enablePoison
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
     case LogUtilsOptionsKey => LogUtilsOptions(
@@ -300,8 +300,8 @@ object TestTopZhuJiangConfig {
   private def base(numCores: Int, zjParameters: ZJParameters): Config = new Config((site, _, up) => {
     case EnableL2DecoupledDownstreamCHI => true
     case CHIIssue => Issue.Eb
-    case CHIDataCheckKey => "none"
-    case CHIPoisonKey => false
+    case CHIDataCheckKey => site(L2ParamKey).dataCheck.getOrElse("none")
+    case CHIPoisonKey => site(L2ParamKey).enablePoison
     case BankBitsKey => 0
     case MaxHartIdBits => log2Up(numCores)
     case ZJParametersKey => zjParameters
