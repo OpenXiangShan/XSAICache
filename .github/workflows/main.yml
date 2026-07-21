@@ -85,15 +85,17 @@ jobs:
       run: tar -zcf ${{ env.VERILATOR_ARCHIVE }} verilator
 
   # This workflow contains a single job called "build"
-  chi-test_L2:
+  unit-test:
     # The type of runner that the job will run on
     runs-on: ubuntu-22.04
 
     # Environments
     env:
-      RUN_ARCHIVE: xscache-chi-test-run-${{ github.sha }}
-      RUN_ARCHIVE_CHI: xscache-chi-test-run-${{ github.sha }}.tar.gz
-      RUN_ARCHIVE_MATRIX: xscache-chi-test-run-${{ github.sha }}-matrix.tar.gz
+      RUN_ARCHIVE: xscache-test-run-${{ github.sha }}
+      RUN_ARCHIVE_OPENLLC: xscache-test-run-${{ github.sha }}-openllc.tar.gz
+      RUN_ARCHIVE_MATRIX: xscache-test-run-${{ github.sha }}-matrix.tar.gz
+      RUN_ARCHIVE_ZHUJIANG: xscache-test-run-${{ github.sha }}-zhujiang.tar.gz
+      RUN_ARCHIVE_ZHUJIANG_MATRIX: xscache-test-run-${{ github.sha }}-zhujiang-matrix.tar.gz
       VERILATOR_ARCHIVE: verilator-ubuntu-22.04-clang-17.tar.gz
 
     # Steps represent a sequence of tasks that will be executed as part of the job
@@ -164,7 +166,7 @@ jobs:
           fi
       
       # Clean artifacts folder (./tl-test-new/run) after successful run
-      - name: Unit test for CHI version
+      - name: Unit test for CoupledL2 + OpenLLC
         run: |
             rm -rf tl-test-new
             git clone https://github.com/OpenXiangShan/tl-test-new
@@ -183,7 +185,7 @@ jobs:
         if: always()
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
-            tar -zcf ${{ env.RUN_ARCHIVE_CHI }} ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_OPENLLC }} ./tl-test-new/run
 
       - name: Matrix trace tests for CHI version
         run: |
@@ -227,6 +229,105 @@ jobs:
         run: |
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_MATRIX }} ./tl-test-new/run
+
+      - name: Unit test for CoupledL2 + ZhuJiang
+        run: |
+            rm -rf tl-test-new
+            git clone --branch feat-zhujiang --single-branch https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            sed -i 's/ari.target.*/ari.target = 100/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable .*=.*/cmo.enable = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.clean.*=.*/cmo.enable.cbo.clean = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.flush.*=.*/cmo.enable.cbo.flush = 1/g' ./configs/user.tltest.ini
+            sed -i 's/cmo.enable.cbo.inval.*=.*/cmo.enable.cbo.inval = 1/g' ./configs/user.tltest.ini
+            rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
+            make zhujiang-test-l2l3l2 run THREADS_BUILD=4 CXX_COMPILER=clang++-17
+            rm -rf run/*.vcd run/*.fst run/*.log run/*.db
+            
+      - name: Tar up artifacts of Unit Test for CoupledL2 + ZhuJiang
+        if: always()
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_ZHUJIANG }} ./tl-test-new/run
+
+      - name: Matrix trace tests for CoupledL2 + ZhuJiang
+        run: |
+            rm -rf tl-test-new
+            git clone https://github.com/OpenXiangShan/tl-test-new
+            cd ./tl-test-new
+            git checkout --detach a236a69b6bcbc6655e58c5572ff954d0f5c3c796
+            test "$(git rev-parse HEAD)" = "a236a69b6bcbc6655e58c5572ff954d0f5c3c796"
+            rm -rf ./dut/XSCache && ln -s ../.. ./dut/XSCache
+
+            make -C ./dut/XSCache test-top-zhujiang-matrix
+
+            rtl_dir="${PWD}/dut/XSCache/build/zj_matrix"
+            verilated_dir="${PWD}/verilated"
+            build_dir="${PWD}/main/build"
+
+            verilator_root=$(verilator -V | awk -F= '/^[[:space:]]*VERILATOR_ROOT[[:space:]]*=/ {gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit}')
+            verilator_include="${verilator_root}/include"
+            test -d "${verilator_include}"
+
+            mapfile -t rtl_files < <(find "${rtl_dir}" -type f \( -name '*.v' -o -name '*.sv' \) | sort)
+            mapfile -t rtl_dirs < <(find "${rtl_dir}" -type d | sort)
+            test "${#rtl_files[@]}" -gt 0
+
+            include_args=()
+            for dir in "${rtl_dirs[@]}"; do
+              include_args+=("-I${dir}")
+            done
+
+            rm -rf "${verilated_dir}" "${build_dir}" ./run
+            mkdir -p "${verilated_dir}" "${build_dir}" ./run
+            printf '%s\n' "${rtl_files[@]}" "${include_args[@]}" > "${verilated_dir}/verilator-inputs.f"
+
+            verilator --trace-fst --cc --build --lib-create vltdut \
+              --Mdir "${verilated_dir}" -f "${verilated_dir}/verilator-inputs.f" \
+              -Wno-fatal --top TestTop --build-jobs 4 --verilate-jobs 4 \
+              -DSIM_TOP_MODULE_NAME=TestTop
+
+            make tltest-config-openLLC-test-matrix-trace
+            cmake -S ./main -B "${build_dir}" \
+              -DBUILD_DPI=ON -DBUILD_V3=ON \
+              -DDUT_PATH="${PWD}/dut/XSCache" \
+              -DVERILATED_PATH="${verilated_dir}" \
+              -DVERILATOR_INCLUDE="${verilator_include}"
+            make -C "${build_dir}" -j4
+            make -C "${build_dir}" portgen -j4 --always-make
+
+            for trace in \
+              high-concurrency-nofence-1000.ops \
+              matrix-trace-64sets.ops \
+              random-chaos-1000.ops \
+              st16_mr16_ev_mw_repeat8.trace
+            do
+              name="${trace%.*}"
+              run_dir="./run/zhujiang-matrix-${name}"
+              rm -rf "${run_dir}"
+              mkdir -p "${run_dir}"
+              cp "${build_dir}/tltest_v3lt" "${run_dir}/"
+              cp "${build_dir}/tltest_portgen.so" "${run_dir}/"
+              cp "${build_dir}/tltest.ini" "${run_dir}/"
+              sed -i "s#trace.filepath[[:space:]]*=.*#trace.filepath              = ${PWD}/traces/${trace}#g" "${run_dir}/tltest.ini"
+              grep -Fq "${PWD}/traces/${trace}" "${run_dir}/tltest.ini"
+              bash ./scripts/run_v3lt.sh "${run_dir}"
+              log="${run_dir}/tltest_v3lt.log"
+              grep -q "pending_entries=0" "${log}"
+              grep -q "tl-test subsystem finalized" "${log}"
+              summary=$(grep -F "Trace summary:" "${log}" | tail -n 1)
+              sent=$(sed -nE 's/.*sent\{R\/W\/E\}=([0-9]+\/[0-9]+\/[0-9]+).*/\1/p' <<<"${summary}")
+              recv=$(sed -nE 's/.*recv\{R\/W\/E\}=([0-9]+\/[0-9]+\/[0-9]+).*/\1/p' <<<"${summary}")
+              test -n "${sent}"
+              test "${sent}" = "${recv}"
+              rm -f "${run_dir}"/*.vcd "${run_dir}"/*.fst "${run_dir}"/*.db
+            done
+
+      - name: Tar up artifacts of Matrix trace tests for CoupledL2 + ZhuJiang
+        if: always()
+        run: |
+            test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
+            tar -zcf ${{ env.RUN_ARCHIVE_ZHUJIANG_MATRIX }} ./tl-test-new/run
       
       - name: Upload artifacts of Unit Test
         if: always()
