@@ -126,7 +126,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val writeEvictOrEvict_s3  = !refill_task_s3 && afterIssueEbOrElse(opcode_s3 === WriteEvictOrEvict, false.B)
 
   if (inclusion == "Exclusive") {
-    assert(!(self_hit_s3 && clients_hit_s3 && !readOnce_s3), "Non-exclusive?")
+    assert(!(self_hit_s3 && clients_hit_s3), "Non-exclusive?")
   }
 
   assert(!task_s3.valid || refill_task_s3 ||
@@ -300,10 +300,13 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     */
   val unique_peerRN_s4 = !self_hit_s4 && peerRNs_hit_s4 && PopCount(clients_valids_vec_s4) === 1.U
   val replace_snoop_s4 = clients_meta_conflict_s4
-  val matrixAB_self_replace_s4 = readOnce_s4 && !self_hit_s4 && self_meta_s4.valid &&
+  // A peer-sourced ReadOnce must not refill self in Exclusive mode, or self/client hits can coexist.
+  val readOncePeerHit_s4 = readOnce_s4 && !self_hit_s4 && peerRNs_hit_s4
+  val readOnceMemMiss_s4 = readOnce_s4 && !self_hit_s4 && !peerRNs_hit_s4
+  val matrixAB_self_replace_s4 = readOnceMemMiss_s4 && self_meta_s4.valid &&
     self_meta_s4.matrixAB && !selfDirty_s4
   val request_snoop_s4 = (exclusiveReq_s4 || invalidReq_s4) && peerRNs_hit_s4 ||
-    (readOnce_s4 && peerRNs_hit_s4 || sharedReq_s4) && !self_hit_s4 ||
+    (readOncePeerHit_s4 || sharedReq_s4) && !self_hit_s4 ||
     cleanReq_s4 && unique_peerRN_s4
   val need_snoop_s4 = replace_snoop_s4 || request_snoop_s4 || matrixAB_self_replace_s4
   val snp_address_s4 = Mux(
@@ -379,7 +382,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
         replace_snoop_s4,
         clients_valids_vec_s4.asUInt,
         Mux(
-          sharedReq_s4 || readOnce_s4 && peerRNs_hit_s4,
+          sharedReq_s4,
           peerRNs_valids_vec_s4.asUInt,
           Cat(Seq.fill(numRNs)(false.B))
         )
@@ -387,7 +390,8 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     ).asBools
   )
   refill_s4.valid := task_s4.valid && (
-    (readOnce_s4 || sharedReq_s4 || writeBackFull_s4 || writeEvictOrEvict_s4) && !self_hit_s4 ||
+    readOnceMemMiss_s4 ||
+    (sharedReq_s4 || writeBackFull_s4 || writeEvictOrEvict_s4) && !self_hit_s4 ||
     replace_snoop_s4
   )
   refill_s4.bits.state.s_refill := false.B
