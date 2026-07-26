@@ -389,7 +389,8 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
       val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
-      val chi = new PortIO
+      val lcreditCHI = Option.when(!p(EnableL2DecoupledDownstreamCHI))(new PortIO)
+      val decoupledCHI = Option.when(p(EnableL2DecoupledDownstreamCHI))(new DecoupledPortIO)
       val nodeID = Input(UInt())
       val cpu_wfi = Option.when(cacheParams.enableL2Flush)(Input(Bool()))
     })
@@ -406,15 +407,23 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     print_bundle_fields(node.in.head._2.bundle.requestFields, "usr")
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
 
-    require(io.chi.tx.rsp.getWidth == io.chi.rx.rsp.getWidth)
-    require(io.chi.tx.dat.getWidth == io.chi.rx.dat.getWidth)
-
     println(s"CHI Issue Version: ${p(CHIIssue)}")
-    println(s"CHI REQ Flit Width: ${io.chi.tx.req.flit.getWidth}")
-    println(s"CHI RSP Flit Width: ${io.chi.tx.rsp.flit.getWidth}")
-    println(s"CHI SNP Flit Width: ${io.chi.rx.snp.flit.getWidth}")
-    println(s"CHI DAT Flit Width: ${io.chi.rx.dat.flit.getWidth}")
-    println(s"CHI Port Width: ${io.chi.getWidth}")
+    io.lcreditCHI.foreach { chi =>
+      require(chi.tx.rsp.getWidth == chi.rx.rsp.getWidth)
+      require(chi.tx.dat.getWidth == chi.rx.dat.getWidth)
+      println(s"CHI REQ Flit Width: ${chi.tx.req.flit.getWidth}")
+      println(s"CHI RSP Flit Width: ${chi.tx.rsp.flit.getWidth}")
+      println(s"CHI SNP Flit Width: ${chi.rx.snp.flit.getWidth}")
+      println(s"CHI DAT Flit Width: ${chi.rx.dat.flit.getWidth}")
+      println(s"CHI Port Width: ${chi.getWidth}")
+    }
+    io.decoupledCHI.foreach { chi =>
+      println(s"Decoupled CHI REQ Flit Width: ${chi.tx.req.bits.getWidth}")
+      println(s"Decoupled CHI RSP Flit Width: ${chi.tx.rsp.bits.getWidth}")
+      println(s"Decoupled CHI SNP Flit Width: ${chi.rx.snp.bits.getWidth}")
+      println(s"Decoupled CHI DAT Flit Width: ${chi.rx.dat.bits.getWidth}")
+      println(s"Decoupled CHI Port Width: ${chi.getWidth}")
+    }
 
     println(s"Cacheable:")
     node.edges.in.headOption.foreach { n =>
@@ -691,19 +700,28 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       Cat(slices.zipWithIndex.map { case (s, i) => s.io.out.rx.dat.ready && rxdatSliceID === i.U }).orR
     )
 
-    val linkMonitor = Module(new LinkMonitor)
-    val rxdatPipe = Pipeline(linkMonitor.io.in.rx.dat)
-    val rxrspPipe = Pipeline(linkMonitor.io.in.rx.rsp)
-    linkMonitor.io.in.tx.req <> txreq
-    linkMonitor.io.in.tx.rsp <> txrsp
-    linkMonitor.io.in.tx.dat <> txdat
-    rxsnp <> linkMonitor.io.in.rx.snp
-    rxrsp <> rxrspPipe
-    rxdat <> rxdatPipe
-    io.chi <> linkMonitor.io.out
-    linkMonitor.io.nodeID := io.nodeID
-    linkMonitor.io.exitco.foreach { _ :=
-      Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io.cpu_wfi.getOrElse(false.B)
+    if (p(EnableL2DecoupledDownstreamCHI)) {
+      io.decoupledCHI.get.tx.req <> txreq
+      io.decoupledCHI.get.tx.rsp <> txrsp
+      io.decoupledCHI.get.tx.dat <> txdat
+      rxsnp <> io.decoupledCHI.get.rx.snp
+      rxrsp <> Pipeline(io.decoupledCHI.get.rx.rsp)
+      rxdat <> Pipeline(io.decoupledCHI.get.rx.dat)
+    } else {
+      val linkMonitor = Module(new LinkMonitor)
+      val rxdatPipe = Pipeline(linkMonitor.io.in.rx.dat)
+      val rxrspPipe = Pipeline(linkMonitor.io.in.rx.rsp)
+      linkMonitor.io.in.tx.req <> txreq
+      linkMonitor.io.in.tx.rsp <> txrsp
+      linkMonitor.io.in.tx.dat <> txdat
+      rxsnp <> linkMonitor.io.in.rx.snp
+      rxrsp <> rxrspPipe
+      rxdat <> rxdatPipe
+      io.lcreditCHI.get <> linkMonitor.io.out
+      linkMonitor.io.nodeID := io.nodeID
+      linkMonitor.io.exitco.foreach { _ :=
+        Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io.cpu_wfi.getOrElse(false.B)
+      }
     }
 
     XSPerfAccumulate("pcrd_count", pCrdQueue_s2.io.enq.fire)
