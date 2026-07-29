@@ -96,8 +96,62 @@ object XSCache extends HasChisel with $file.common.XSCacheModule {
 
   def openNCBModule: ScalaModule = openNCB
 
-  object test extends SbtTests with TestModule.ScalaTest
+  object test extends SbtTests with TestModule.ScalaTest {
+    override def sources = T.sources {
+      Seq(
+        PathRef(pwd / "src" / "test" / "scala" / "ReplacementPolicyTest.scala"),
+        PathRef(pwd / "src" / "test" / "scala" / "TestSplittedSRAM.scala")
+      )
+    }
+  }
+
+  object testtop extends Module {
+    object l2 extends HasChisel {
+      override def millSourcePath = pwd
+      override def moduleDeps = super.moduleDeps ++ Seq(XSCache)
+      override def sources = T.sources {
+        Seq(PathRef(pwd / "src" / "test" / "scala" / "TestTopL2.scala"))
+      }
+      override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
+    }
+
+    object openllc extends HasChisel {
+      override def millSourcePath = pwd
+      override def moduleDeps = super.moduleDeps ++ Seq(XSCache)
+      override def sources = T.sources {
+        Seq(
+          PathRef(pwd / "src" / "test" / "scala" / "TestTopOpenLLC.scala"),
+          PathRef(pwd / "src" / "test" / "scala" / "TestTopMatrix.scala")
+        )
+      }
+      override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
+    }
+
+    object zhujiang extends HasChisel {
+      override def millSourcePath = pwd
+      override def moduleDeps = super.moduleDeps ++ Seq(XSCache, zhujiangCompat)
+      override def sources = T.sources {
+        Seq(
+          PathRef(pwd / "src" / "test" / "scala" / "ZhuJiangBridge.scala"),
+          PathRef(pwd / "src" / "test" / "scala" / "TestTopZhuJiang.scala")
+        )
+      }
+      override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
+    }
+  }
 
   override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
 
+}
+
+object zhujiangCompat extends HasChisel {
+  override def millSourcePath = pwd / "ZhuJiang"
+  override def moduleDeps = super.moduleDeps ++ Seq(rocketchip, utility)
+  override def sources = T.sources {
+    Seq(
+      PathRef(millSourcePath / "src" / "main" / "scala"),
+      PathRef(millSourcePath / "xs-utils" / "src" / "main" / "scala")
+    )
+  }
+  override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
 }

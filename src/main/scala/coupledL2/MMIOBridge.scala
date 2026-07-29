@@ -80,7 +80,8 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends CoupledL2M
   //
   //          2) For Device backend, the observability of possible weakly-ordered intermediate states were determined
   //          by the HN (Home Node) on bus with Endpoint Ordering.
-  val bufferableNC = true
+  val bufferableNC = cacheParams.bufferableNC
+  val endpointOrderNC = cacheParams.endpointOrderNC
 
   require(!bufferableNC || needRR , "DO NOT set 'bufferableNC = true' when 'needRR = false'")
 
@@ -252,10 +253,15 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends CoupledL2M
   //    PMA = NC/IO, PBMT = NC -> Device nRE  (no reorder, early acknowlegment)
   //    PMA = NC/IO, PBMT = IO -> Device nRnE (no reorder, no early acknowlegment)
   txreq.bits.order := {
-    if (needRR) 
-      Mux(!isBackTypeMM, OrderEncodings.EndpointOrder, OrderEncodings.RequestOrder)
-    else 
+    if (needRR) {
+      if (endpointOrderNC) {
+        OrderEncodings.EndpointOrder
+      } else {
+        Mux(!isBackTypeMM, OrderEncodings.EndpointOrder, OrderEncodings.RequestOrder)
+      }
+    } else {
       OrderEncodings.None
+    }
   }
   txreq.bits.memAttr := MemAttr(
     allocate = false.B,
