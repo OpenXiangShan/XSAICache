@@ -303,42 +303,32 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   // A peer-sourced ReadOnce must not refill self in Exclusive mode, or self/client hits can coexist.
   val readOncePeerHit_s4 = readOnce_s4 && !self_hit_s4 && peerRNs_hit_s4
   val readOnceMemMiss_s4 = readOnce_s4 && !self_hit_s4 && !peerRNs_hit_s4
-  val matrixAB_self_replace_s4 = readOnceMemMiss_s4 && self_meta_s4.valid &&
-    self_meta_s4.matrixAB && !selfDirty_s4
   val request_snoop_s4 = (exclusiveReq_s4 || invalidReq_s4) && peerRNs_hit_s4 ||
     (readOncePeerHit_s4 || sharedReq_s4) && !self_hit_s4 ||
     cleanReq_s4 && unique_peerRN_s4
-  val need_snoop_s4 = replace_snoop_s4 || request_snoop_s4 || matrixAB_self_replace_s4
+  val need_snoop_s4 = replace_snoop_s4 || request_snoop_s4
   val snp_address_s4 = Mux(
-    matrixAB_self_replace_s4,
-    Cat(selfDirResp_s4.tag, selfDirResp_s4.set, req_s4.bank, req_s4.off),
-    Mux(
-      replace_snoop_s4,
-      Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.bank, req_s4.off),
-      Cat(req_s4.tag, req_s4.set, req_s4.bank, req_s4.off)
-    )
+    replace_snoop_s4,
+    Cat(clientsDirResp_s4.tag, clientsDirResp_s4.set, req_s4.bank, req_s4.off),
+    Cat(req_s4.tag, req_s4.set, req_s4.bank, req_s4.off)
   )
 
   val snp_task_s4 = WireInit(0.U.asTypeOf(req_s4))
   snp_task_s4.tag := parseAddress(snp_address_s4)._1
   snp_task_s4.set := parseAddress(snp_address_s4)._2
   snp_task_s4.bank := parseAddress(snp_address_s4)._3
-  snp_task_s4.replSnp := replace_snoop_s4 || matrixAB_self_replace_s4
+  snp_task_s4.replSnp := replace_snoop_s4
   snp_task_s4.txnID := req_s4.reqID
   snp_task_s4.doNotGoToSD := true.B
   snp_task_s4.snpVec := VecInit(
     Mux(
-      matrixAB_self_replace_s4,
-      allRNs_vec_s4.asUInt,
-      Mux(
-        replace_snoop_s4,
-        clients_valids_vec_s4.asUInt,
-        peerRNs_valids_vec_s4.asUInt
-      )
+      replace_snoop_s4,
+      clients_valids_vec_s4.asUInt,
+      peerRNs_valids_vec_s4.asUInt
     ).asBools
   )
   snp_task_s4.chiOpcode := Mux(
-    replace_snoop_s4 || matrixAB_self_replace_s4,
+    replace_snoop_s4,
     SnpUnique,
     Mux(
       readOnce_s4,
@@ -358,13 +348,9 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
     )
   )
   snp_task_s4.retToSrc := Mux(
-    matrixAB_self_replace_s4,
-    false.B,
-    Mux(
-      !replace_snoop_s4,
-      Mux(makeUnique_s4 || makeInvalid_s4 || cleanInvalid_s4 || cleanShared_s4, false.B, !self_hit_s4),
-      true.B
-    )
+    !replace_snoop_s4,
+    Mux(makeUnique_s4 || makeInvalid_s4 || cleanInvalid_s4 || cleanShared_s4, false.B, !self_hit_s4),
+    true.B
   )
 
   snp_s4.valid := task_s4.valid && need_snoop_s4
@@ -376,16 +362,12 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   // or when they are shared among multiple cores
   val snpVec_refill_s4 = VecInit(
     Mux(
-      matrixAB_self_replace_s4,
-      allRNs_vec_s4.asUInt,
+      replace_snoop_s4,
+      clients_valids_vec_s4.asUInt,
       Mux(
-        replace_snoop_s4,
-        clients_valids_vec_s4.asUInt,
-        Mux(
-          sharedReq_s4,
-          peerRNs_valids_vec_s4.asUInt,
-          Cat(Seq.fill(numRNs)(false.B))
-        )
+        sharedReq_s4,
+        peerRNs_valids_vec_s4.asUInt,
+        Cat(Seq.fill(numRNs)(false.B))
       )
     ).asBools
   )
@@ -407,7 +389,7 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   refill_s4.bits.task.set := parseAddress(refill_address_s4)._2
   refill_s4.bits.task.refillTask := true.B
   refill_s4.bits.task.snpVec := snpVec_refill_s4
-  refill_s4.bits.task.replSnp := replace_snoop_s4 || matrixAB_self_replace_s4
+  refill_s4.bits.task.replSnp := replace_snoop_s4
   refill_s4.bits.dirResult.self := selfDirResp_s4
   refill_s4.bits.dirResult.clients := clientsDirResp_s4
   refill_s4.bits.isWrite := writeBackFull_s4 || writeEvictOrEvict_s4
@@ -419,18 +401,14 @@ class MainPipe(implicit p: Parameters) extends LLCModule with HasCHIOpcodes {
   val respI_s4  = readOnce_s4 || releaseReq_s4 || invalidReq_s4 || cleanReq_s4 || writeCleanFull_s4
   val snpVec_comp_s4 = VecInit(
     Mux(
-      matrixAB_self_replace_s4,
-      allRNs_vec_s4.asUInt,
-      Mux(
-        request_snoop_s4,
-        peerRNs_valids_vec_s4.asUInt,
-        Cat(Seq.fill(numRNs)(false.B))
-      )
+      request_snoop_s4,
+      peerRNs_valids_vec_s4.asUInt,
+      Cat(Seq.fill(numRNs)(false.B))
     ).asBools
   )
   val comp_task_s4 = WireInit(req_s4)
   comp_task_s4.snpVec := snpVec_comp_s4
-  comp_task_s4.replSnp := replace_snoop_s4 || matrixAB_self_replace_s4
+  comp_task_s4.replSnp := replace_snoop_s4
   comp_task_s4.tgtID := srcID_s4
   comp_task_s4.homeNID := req_s4.tgtID
   comp_task_s4.dbID := req_s4.reqID
