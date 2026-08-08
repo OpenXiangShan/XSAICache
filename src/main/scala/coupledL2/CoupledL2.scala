@@ -389,7 +389,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       val l2FlushDone = Option.when(cacheParams.enableL2Flush) (Output(Bool()))
       val dft = Option.when(cacheParams.hasDFT)(Input(new SramBroadcastBundle))
       val dft_reset = Option.when(cacheParams.hasMbist)(Input(new DFTResetSignals()))
-      val lcreditCHI = Option.when(!p(EnableL2DecoupledDownstreamCHI))(new PortIO)
+      val chi = Option.when(!p(EnableL2DecoupledDownstreamCHI))(new PortIO)
       val decoupledCHI = Option.when(p(EnableL2DecoupledDownstreamCHI))(new DecoupledPortIO)
       val nodeID = Input(UInt())
       val cpu_wfi = Option.when(cacheParams.enableL2Flush)(Input(Bool()))
@@ -408,7 +408,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     print_bundle_fields(node.in.head._2.bundle.echoFields, "echo")
 
     println(s"CHI Issue Version: ${p(CHIIssue)}")
-    io.lcreditCHI.foreach { chi =>
+    io.chi.foreach { chi =>
       require(chi.tx.rsp.getWidth == chi.rx.rsp.getWidth)
       require(chi.tx.dat.getWidth == chi.rx.dat.getWidth)
       println(s"CHI REQ Flit Width: ${chi.tx.req.flit.getWidth}")
@@ -717,7 +717,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       rxsnp <> linkMonitor.io.in.rx.snp
       rxrsp <> rxrspPipe
       rxdat <> rxdatPipe
-      io.lcreditCHI.get <> linkMonitor.io.out
+      io.chi.get <> linkMonitor.io.out
       linkMonitor.io.nodeID := io.nodeID
       linkMonitor.io.exitco.foreach { _ :=
         Cat(slices.zipWithIndex.map { case (s, i) => s.io.l2FlushDone.getOrElse(false.B)}).andR && io.cpu_wfi.getOrElse(false.B)

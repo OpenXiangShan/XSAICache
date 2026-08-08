@@ -285,17 +285,17 @@ class TestTopMatrix(
           clock = l2.module.clock,
           reset = l2.module.reset,
           rnId = l2.module.io.nodeID,
-          txreqflit = l2.module.io.lcreditCHI.get.tx.req.flit, txreqflitv = l2.module.io.lcreditCHI.get.tx.req.flitv,
-          rxrspflit = l2.module.io.lcreditCHI.get.rx.rsp.flit, rxrspflitv = l2.module.io.lcreditCHI.get.rx.rsp.flitv,
-          rxdatflit = l2.module.io.lcreditCHI.get.rx.dat.flit, rxdatflitv = l2.module.io.lcreditCHI.get.rx.dat.flitv,
-          rxsnpflit = l2.module.io.lcreditCHI.get.rx.snp.flit, rxsnpflitv = l2.module.io.lcreditCHI.get.rx.snp.flitv,
-          txrspflit = l2.module.io.lcreditCHI.get.tx.rsp.flit, txrspflitv = l2.module.io.lcreditCHI.get.tx.rsp.flitv,
-          txdatflit = l2.module.io.lcreditCHI.get.tx.dat.flit, txdatflitv = l2.module.io.lcreditCHI.get.tx.dat.flitv,
+          txreqflit = l2.module.io.chi.get.tx.req.flit, txreqflitv = l2.module.io.chi.get.tx.req.flitv,
+          rxrspflit = l2.module.io.chi.get.rx.rsp.flit, rxrspflitv = l2.module.io.chi.get.rx.rsp.flitv,
+          rxdatflit = l2.module.io.chi.get.rx.dat.flit, rxdatflitv = l2.module.io.chi.get.rx.dat.flitv,
+          rxsnpflit = l2.module.io.chi.get.rx.snp.flit, rxsnpflitv = l2.module.io.chi.get.rx.snp.flitv,
+          txrspflit = l2.module.io.chi.get.tx.rsp.flit, txrspflitv = l2.module.io.chi.get.tx.rsp.flitv,
+          txdatflit = l2.module.io.chi.get.tx.dat.flit, txdatflitv = l2.module.io.chi.get.tx.dat.flitv,
           time = time_sim, timev = extTime.B
         )
       }
 
-      l2.module.io.lcreditCHI.get <> l3.io.rn(i)
+      l2.module.io.chi.get <> l3.io.rn(i)
       dontTouch(l2.module.io)
 
       l2.module.io.l2_hint <> io_l1(i).l2Hint
