@@ -65,7 +65,15 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   sinkC.io.msInfo := mshrCtl.io.msInfo
 
   grantBuf.io.d_task <> mainPipe.io.toSourceD
-  if (enableMatrix) io.matrixDataOut.get <> grantBuf.io.matrixDataOut.get
+  if (enableMatrix) {
+    val matrixDataOut = io.matrixDataOut.get
+    val grantMatrixDataOut = grantBuf.io.matrixDataOut.get
+    val hintReady = mainPipe.io.matrixDataOutHintReady.get
+    matrixDataOut.valid := grantMatrixDataOut.valid && hintReady
+    matrixDataOut.bits := grantMatrixDataOut.bits
+    grantMatrixDataOut.ready := matrixDataOut.ready && hintReady
+    mainPipe.io.matrixDataOutFire.get := matrixDataOut.fire
+  }
   grantBuf.io.fromReqArb.status_s1 := reqArb.io.status_s1
   grantBuf.io.pipeStatusVec := reqArb.io.status_vec ++ mainPipe.io.status_vec_toD
 
