@@ -113,6 +113,8 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
 
     /* l2 refill hint */
     val l1Hint = DecoupledIO(new L2ToL1HintInsideL2())
+    val matrixDataOutHintReady = Option.when(enableMatrix)(Output(Bool()))
+    val matrixDataOutFire = Option.when(enableMatrix)(Input(Bool()))
 
     /* send prefetchTrain to Prefetch to trigger a prefetch req */
     val prefetchTrain = prefetchOpt.map(_ => DecoupledIO(new PrefetchTrain))
@@ -848,6 +850,8 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
   customL1Hint.io.s3.task.bits.opcode := Mux(sink_resp_s3.valid, sink_resp_s3.bits.opcode, task_s3.bits.opcode)
   customL1Hint.io.s3.need_mshr := need_mshr_s3_a
+  io.matrixDataOutHintReady.foreach(_ := customL1Hint.io.matrixDataOutReady.get)
+  customL1Hint.io.matrixDataOutFire.foreach(_ := io.matrixDataOutFire.get)
 
   customL1Hint.io.l1Hint <> io.l1Hint
 

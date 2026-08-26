@@ -29,6 +29,7 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val isGrantData = Bool()
   val isKeyword = Bool()
   val hasData = Bool()
+  val isMatrixData = Bool()
 }
 
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
@@ -36,6 +37,8 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   val mshrHintQInfo = Flipped(ValidIO(new TaskBundle()))
   val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle()))
   val retry_s2 = Input(Bool())
+  val matrixDataOutReady = Option.when(enableMatrix)(Output(Bool()))
+  val matrixDataOutFire = Option.when(enableMatrix)(Input(Bool()))
 
   val s3 = new L2Bundle {
       val task      = Flipped(ValidIO(new TaskBundle()))
@@ -89,6 +92,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   enqBits_s1.isGrantData := mshr_GrantData_s1
   // Matrix AccessAckData uses the one-beat MatrixDataOut path.
   enqBits_s1.hasData := mshr_GrantData_s1 || (mshr_AccessAckData_s1 && !mshr_s1.matrixTask.getOrElse(false.B))
+  enqBits_s1.isMatrixData := mshr_AccessAckData_s1 && mshr_s1.matrixTask.getOrElse(false.B)
 
   // Hint for "chnTask Hit" will fire@s3
   val chn_Grant_s3     = task_s3.valid && !mshrReq_s3 && !need_mshr_s3 && task_s3.bits.fromA && task_s3.bits.opcode === Grant
@@ -102,6 +106,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   enqBits_s3.isGrantData := chn_GrantData_s3
   // Matrix AccessAckData uses the one-beat MatrixDataOut path.
   enqBits_s3.hasData := chn_GrantData_s3 || (chn_AccessAckData_s3 && !task_s3.bits.matrixTask.getOrElse(false.B))
+  enqBits_s3.isMatrixData := chn_AccessAckData_s3 && task_s3.bits.matrixTask.getOrElse(false.B)
 
   // ==================== Hint Queue ====================
   val hintEntries = mshrsAll
@@ -128,11 +133,20 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   enq_s3.valid := enqValid_s3
   enq_s3.bits := enqBits_s3
   arb(Seq(enq_s3, drop_s1, flow_s1), hintQueue.io.enq, Some("Hint"))
+  val matrixDataOutFire = io.matrixDataOutFire.getOrElse(false.B)
+  val deqIsMatrixData = hintQueue.io.deq.valid && hintQueue.io.deq.bits.isMatrixData
+  io.matrixDataOutReady.foreach(_ := deqIsMatrixData)
   val respWithDataFire = io.l1Hint.fire && io.l1Hint.bits.hasData
-  hintQueue.io.deq.ready := io.l1Hint.ready && !RegNext(respWithDataFire, false.B)
+  val normalHintReady = io.l1Hint.ready && !RegNext(respWithDataFire, false.B)
+  hintQueue.io.deq.ready := Mux(deqIsMatrixData, matrixDataOutFire, normalHintReady)
 
-  io.l1Hint.valid := hintQueue.io.deq.valid && !(io.retry_s2 && !hint_s1Queue.io.deq.valid) && !RegNext(respWithDataFire, false.B)
+  io.l1Hint.valid := hintQueue.io.deq.valid && !hintQueue.io.deq.bits.isMatrixData &&
+    !(io.retry_s2 && !hint_s1Queue.io.deq.valid) && !RegNext(respWithDataFire, false.B)
   io.l1Hint.bits.sourceId := hintQueue.io.deq.bits.source
   io.l1Hint.bits.isKeyword := hintQueue.io.deq.bits.isKeyword
   io.l1Hint.bits.hasData := hintQueue.io.deq.bits.hasData
+
+  when(matrixDataOutFire) {
+    assert(deqIsMatrixData, "MatrixDataOut fired without a matching Matrix AccessAckData hint entry")
+  }
 }
