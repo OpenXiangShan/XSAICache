@@ -761,8 +761,8 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
     train =>
       val matrixPrefetchTag = Mux(
         req_s3.mergeA,
-        req_s3.aMergeTask.matrixPrefetchTag.getOrElse(0.U),
-        req_s3.matrixPrefetchTag.getOrElse(0.U)
+        req_s3.aMergeTask.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W)),
+        req_s3.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W))
       )
       val matrixTrain = req_get_s3 && MatrixPrefetchTagCodec.valid(matrixPrefetchTag)
       // train on request(with needHint flag) miss or hit on prefetched block

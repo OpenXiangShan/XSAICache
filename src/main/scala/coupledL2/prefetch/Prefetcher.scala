@@ -1073,7 +1073,9 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
     matrix.io.control := io.matrixPrefetch
     for (i <- 0 until banks) {
       matrix.io.demand(i).valid := io.train(i).fire &&
-        MatrixPrefetchTagCodec.valid(io.train(i).bits.matrixPrefetchTag.getOrElse(0.U))
+        MatrixPrefetchTagCodec.valid(
+          io.train(i).bits.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W))
+        )
       matrix.io.demand(i).bits := io.train(i).bits
     }
   }
