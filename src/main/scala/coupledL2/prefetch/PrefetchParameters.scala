@@ -60,6 +60,11 @@ object PfSource extends Enumeration {
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
 
+  // utility does not yet allocate a dedicated MemReqSource value for Matrix.
+  // Keep the external request encoding compatible with the upstream utility
+  // submodule and distinguish Matrix traffic with the L2-local PfSource tag.
+  val matrixMemReqSource = MemReqSource.Prefetch2L2Unknown
+
   def fromMemReqSource(s: UInt): UInt = {
     val pfsrc = WireInit(NoWhere.id.U.asTypeOf(UInt(pfSourceBits.W)))
     switch(s) {
@@ -71,7 +76,7 @@ object PfSource extends Enumeration {
       is (MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
       is (MemReqSource.Prefetch2L2Berti.id.U) { pfsrc := Berti.id.U }
       is (MemReqSource.Prefetch2L2NL.id.U) { pfsrc := NL.id.U } // The global ID of memReqSource is converted to the internal ID of the prefetcher
-      is (MemReqSource.Prefetch2L2Matrix.id.U) { pfsrc := Matrix.id.U }
+      is (matrixMemReqSource.id.U) { pfsrc := Matrix.id.U }
     }
     pfsrc
   }

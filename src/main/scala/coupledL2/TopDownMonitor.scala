@@ -133,7 +133,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     ("NextLine", (x: UInt) => x === MemReqSource.Prefetch2L2NL.id.U, (y: UInt) => y === PfSource.NL.id.U),
     ("TP", (x: UInt) => x === MemReqSource.Prefetch2L2TP.id.U, (y: UInt) => y === PfSource.TP.id.U),
     ("Berti", (x: UInt) => x === MemReqSource.Prefetch2L2Berti.id.U, (y: UInt) => y === PfSource.Berti.id.U),
-    ("Matrix", (x: UInt) => x === MemReqSource.Prefetch2L2Matrix.id.U, (y: UInt) => y === PfSource.Matrix.id.U)
+    ("Matrix", (x: UInt) => x === PfSource.matrixMemReqSource.id.U, (y: UInt) => y === PfSource.Matrix.id.U)
   )
   val lateHitTypes: Seq[(String, UInt => Bool, UInt => Bool)] = Seq(
     ("Demand", (x: UInt) => MemReqSource.isCPUReq(x), (y: UInt) => y === PfSource.NoWhere.id.U),

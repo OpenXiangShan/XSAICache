@@ -126,7 +126,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def isNL:Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
-  def isMatrix: Bool = pfSource === MemReqSource.Prefetch2L2Matrix.id.U
+  def isMatrix: Bool = pfSource === PfSource.matrixMemReqSource.id.U
   def needAck:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U || pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
@@ -134,7 +134,7 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
       pfSource === MemReqSource.Prefetch2L2NL.id.U ||
-      pfSource === MemReqSource.Prefetch2L2Matrix.id.U
+      pfSource === PfSource.matrixMemReqSource.id.U
 }
 
 private object FullPriorityOneHot {
@@ -163,14 +163,14 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
-  def isMatrix: Bool = pfSource === MemReqSource.Prefetch2L2Matrix.id.U
+  def isMatrix: Bool = pfSource === PfSource.matrixMemReqSource.id.U
   def fromL2: Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
       pfSource === MemReqSource.Prefetch2L2NL.id.U ||
-      pfSource === MemReqSource.Prefetch2L2Matrix.id.U
+      pfSource === PfSource.matrixMemReqSource.id.U
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
@@ -923,7 +923,7 @@ class MatrixGuidedPrefetcher(implicit p: Parameters) extends PrefetchModule {
   io.req.bits.vaddr.foreach(_ := 0.U)
   io.req.bits.needT := false.B
   io.req.bits.source := 0.U
-  io.req.bits.pfSource := MemReqSource.Prefetch2L2Matrix.id.U
+  io.req.bits.pfSource := PfSource.matrixMemReqSource.id.U
   bOnALookaheadArb.io.out.ready := io.enable && useBOnALookahead && io.req.ready
 
   when(io.req.fire) {
