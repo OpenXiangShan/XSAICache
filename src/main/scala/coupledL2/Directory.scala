@@ -452,13 +452,29 @@ class Directory(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !Mux1H(chosenOH, req_s3.wayMask))
 
+  val matrixPrefetchSource = PfSource.Matrix.id.U
+  val dirMatrixPrefetchWrite = io.metaWReq.valid &&
+    io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) &&
+    (io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource)
+  val dirMatrixPrefetchReadNoWhere = io.resp.valid && io.resp.bits.hit &&
+    io.resp.bits.meta.prefetch.getOrElse(false.B) &&
+    (io.resp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource) &&
+    (io.resp.bits.replacerInfo.reqSource === MemReqSource.NoWhere.id.U)
+  val dirMatrixPrefetchEvict = io.replResp.valid && !io.replResp.bits.retry &&
+    Mux1H(finalReplOH, metaAll_s3).prefetch.getOrElse(false.B) &&
+    (Mux1H(finalReplOH, metaAll_s3).prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource)
+  XSPerfAccumulate("dir_matrix_prefetch_write", dirMatrixPrefetchWrite)
+  XSPerfAccumulate("dir_matrix_prefetch_read_nowhere", dirMatrixPrefetchReadNoWhere)
+  XSPerfAccumulate("dir_matrix_prefetch_evict", dirMatrixPrefetchEvict)
+  XSPerfAccumulate("dir_matrix_prefetch_evict_by_nowhere", dirMatrixPrefetchEvict && (req_s3.replacerInfo.reqSource === MemReqSource.NoWhere.id.U))
+
   /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val defaultPfSrc = PfSource.NoWhere.id.U
     val hartId = cacheParams.hartId
-    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
-    val pfReqReadTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
-    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = false)
+    val pfReqWriteTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Write_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqReadTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Read_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
+    val pfReqEvictTable = ChiselDB.createTable(s"L2_Slice${p(SliceIdKey)}_Evict_Prefetch_hart$hartId", new PrefetchDbEntry, basicDB = true)
     
     // Write: meta write that marks a block as prefetched
     val wmeta = io.metaWReq.bits.wmeta

@@ -133,6 +133,17 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     (matched, matchSrc)
   }
 
+  def latePrefetchNoWhereGet(a: TaskBundle): (Bool, UInt) = {
+    val matchVec = VecInit(io.mshrInfo.map(s =>
+      s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
+        a.fromA && (a.opcode === Get) && (a.reqSource === MemReqSource.NoWhere.id.U)
+    ))
+    val matched = matchVec.asUInt.orR
+    assert(PopCount(matchVec) <= 1.U, "Multiple late prefetch MSHRs matched by NoWhere Get")
+    val matchSrc = Mux1H(matchVec, io.mshrInfo.map(_.bits.reqSource))
+    (matched, matchSrc)
+  }
+
   // count ways
 //  def countWaysOH(cond: (MSHRInfo => Bool)): UInt = {
 //    VecInit(io.mshrInfo.map(s =>
@@ -200,8 +211,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
 
   // statistics io
   val latePrefetchRes = latePrefetch(in) // demand request hit entry of pf
+  val latePrefetchNoWhereGetRes = latePrefetchNoWhereGet(in)
   io.pfStatInMSHR.hitPf := latePrefetchRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
   io.pfStatInMSHR.hitPfReqSrc := latePrefetchRes._2
+  io.pfStatInMSHR.hitPfNoWhereGet := latePrefetchNoWhereGetRes._1 && io.in.valid && !sameAddr(in, RegNext(in))
+  io.pfStatInMSHR.hitPfNoWhereGetReqSrc := latePrefetchNoWhereGetRes._2
   io.pfStatInMSHR.pfLate := io.in.valid && dup
   io.pfStatInMSHR.pfLateReqSrc := io.in.bits.reqSource
   io.pfStatInMSHR.pfLateHitReqSrc := dupHitSrc

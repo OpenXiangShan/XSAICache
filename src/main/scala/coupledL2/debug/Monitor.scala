@@ -25,6 +25,11 @@ class CPL2S3Info(implicit p: Parameters) extends L2Bundle {
 
   val channel = UInt(3.W)
   val opcode = UInt(3.W)
+  val fromA = Bool()
+  val matrixTask = Bool()
+  val reqSource = UInt(MemReqSource.reqSourceBits.W)
+  val sourceId = UInt(sourceIdBits.W)
+  val address = UInt(fullAddressBits.W)
   val tag = UInt(tagBits.W)
   val sset = UInt(setBits.W) // set is C++ common word
 
@@ -92,6 +97,11 @@ class Monitor(implicit p: Parameters) extends L2Module {
     s3Info.mshrTask := req_s3.mshrTask
     s3Info.channel := req_s3.channel
     s3Info.opcode := req_s3.opcode
+    s3Info.fromA := req_s3.fromA
+    s3Info.matrixTask := req_s3.matrixTask.getOrElse(false.B)
+    s3Info.reqSource := req_s3.reqSource
+    s3Info.sourceId := req_s3.sourceId
+    s3Info.address := restoreAddress(Cat(req_s3.tag, req_s3.set, req_s3.off), p(SliceIdKey))
     s3Info.tag := req_s3.tag
     s3Info.sset := req_s3.set
     s3Info.dirHit := dirResult_s3.hit

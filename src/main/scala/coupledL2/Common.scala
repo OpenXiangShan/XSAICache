@@ -65,6 +65,7 @@ class MergeTaskBundle(implicit p: Parameters) extends L2Bundle {
   val sourceId = UInt(sourceIdBits.W) // tilelink sourceID
   val meta = new MetaEntry()
   val pc = pcBitOpt.map(_ => UInt(pcBitOpt.get.W))    // pc of demand req 
+  val matrixPrefetchTag = Option.when(enableMatrix)(UInt(MatrixPrefetchTagCodec.width.W))
 }
 
 class MatrixDataBundle(implicit p: Parameters) extends L2Bundle {
@@ -135,6 +136,7 @@ class TaskBundle(implicit p: Parameters) extends L2Bundle
   val ameChannel = Option.when(enableMatrix)(UInt(4.W))
   val ameIndex = Option.when(enableMatrix)(UInt(64.W))
   val matrixTask = Option.when(enableMatrix)(Bool())
+  val matrixPrefetchTag = Option.when(enableMatrix)(UInt(MatrixPrefetchTagCodec.width.W))
 
   // for TopDown Monitor (# TopDown)
   val reqSource = UInt(MemReqSource.reqSourceBits.W)

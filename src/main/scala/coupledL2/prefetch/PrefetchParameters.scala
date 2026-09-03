@@ -29,8 +29,17 @@ trait PrefetchParameters {
   val inflightEntries: Int // max num of inflight prefetch reqs
 }
 
+/** Instantiate the shared L2 prefetch path for the matrix-guided engine only. */
+case class MatrixPrefetchParameters(inflightEntries: Int = 32) extends PrefetchParameters {
+  override val hasPrefetchBit: Boolean = true
+  override val hasPrefetchSrc: Boolean = true
+}
+
 trait HasPrefetchParameters extends HasCoupledL2Parameters {
   val inflightEntries = if(prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
+  val matrixInflightEntries = prefetchers.collectFirst {
+    case params: MatrixPrefetchParameters => params.inflightEntries
+  }.getOrElse(32)
 }
 
 abstract class PrefetchBundle(implicit val p: Parameters) extends Bundle with HasPrefetchParameters
@@ -46,6 +55,7 @@ object PfSource extends Enumeration {
   val TP      = Value("TP")
   val Berti   = Value("Berti")
   val NL      = Value("NL")  // Next-Line Prefetcher
+  val Matrix  = Value("Matrix")
 
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
@@ -61,6 +71,7 @@ object PfSource extends Enumeration {
       is (MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
       is (MemReqSource.Prefetch2L2Berti.id.U) { pfsrc := Berti.id.U }
       is (MemReqSource.Prefetch2L2NL.id.U) { pfsrc := NL.id.U } // The global ID of memReqSource is converted to the internal ID of the prefetcher
+      is (MemReqSource.Prefetch2L2Matrix.id.U) { pfsrc := Matrix.id.U }
     }
     pfsrc
   }

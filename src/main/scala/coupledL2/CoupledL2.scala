@@ -105,7 +105,9 @@ trait HasCoupledL2Parameters {
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
-  def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
+  // Matrix-guided prefetch is independent of the legacy prefetch list.  Keep
+  // the shared prefetch datapath when Matrix is the only instantiated source.
+  def prefetchOpt = if(prefetchers.nonEmpty || enableMatrix) Some(true) else None
   def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
   def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
@@ -377,6 +379,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint()(l2ECCParams))
       val matrixDataOut = Option.when(enableMatrix)(Vec(banks, DecoupledIO(new MatrixDataBundle())))
+      val matrixPrefetch = Input(new MatrixPrefetchControl)
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -464,6 +467,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         }
         prefetcher.get.hartId := io.hartId
         prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
+        prefetcher.get.io.matrixPrefetch := io.matrixPrefetch
         prefetcher.get.io.resp <> prefetchResps.get
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }
