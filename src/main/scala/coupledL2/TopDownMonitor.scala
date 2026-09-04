@@ -31,9 +31,6 @@ class PfStatInMSHRBundle()(implicit p: Parameters) extends L2Bundle {
 
   val hitPf = Bool()
   val hitPfReqSrc = UInt(MemReqSource.reqSourceBits.W)
-
-  val hitPfNoWhereGet = Bool()
-  val hitPfNoWhereGetReqSrc = UInt(MemReqSource.reqSourceBits.W)
 }
 
 // TODO: Accommodate CHI
@@ -135,8 +132,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     ("Berti", (x: UInt) => x === MemReqSource.Prefetch2L2Berti.id.U, (y: UInt) => y === PfSource.Berti.id.U),
     ("Matrix", (x: UInt) => x === PfSource.matrixMemReqSource.id.U, (y: UInt) => y === PfSource.Matrix.id.U)
   )
+  def isDemandRead(reqSource: UInt): Bool =
+    MemReqSource.isCPUReq(reqSource) || reqSource === MemReqSource.MatrixRead.id.U
+
   val lateHitTypes: Seq[(String, UInt => Bool, UInt => Bool)] = Seq(
-    ("Demand", (x: UInt) => MemReqSource.isCPUReq(x), (y: UInt) => y === PfSource.NoWhere.id.U),
+    ("Demand", (x: UInt) => isDemandRead(x), (y: UInt) => y === PfSource.NoWhere.id.U),
     ("L1Prefetch", (x: UInt) => MemReqSource.isL1Prefetch(x), (y: UInt) => y === PfSource.NoWhere.id.U),
   ) ++ pfTypes
 
@@ -144,14 +144,11 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2pfSentVec = pfTypes.map { case (_, reqSrcCheck, _) => io.pfSent.map(r => r.valid && reqSrcCheck(r.bits)) }
   val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrcCheck, _) => dirResultMatchVec(r => reqSrcCheck(r.replacerInfo.reqSource)) }
   val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrcCheck) =>
-    dirResultMatchVec(r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && r.hit &&
+    dirResultMatchVec(r => isDemandRead(r.replacerInfo.reqSource) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && pfSrcCheck(r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
   }
   val l2hitPfInMSHRVec = pfTypes.map { case (_, reqSrcCheck, _) =>
     io.pfStatInMSHR.map(r => r.hitPf && reqSrcCheck(r.hitPfReqSrc))
-  }
-  val l2hitPfInMSHRNoWhereGetVec = pfTypes.map { case (_, reqSrcCheck, _) =>
-    io.pfStatInMSHR.map(r => r.hitPfNoWhereGet && reqSrcCheck(r.hitPfNoWhereGetReqSrc))
   }
   val l2pfLateInCache = pfTypes.map { case (_, reqSrcCheck, _) =>
     dirResultMatchVec(r => r.hit && reqSrcCheck(r.replacerInfo.reqSource))
@@ -171,21 +168,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     }
   }
   val l2hitPfVec = l2hitPfInCacheVec.zip(l2hitPfInMSHRVec).map { case (c, m) => PopCount(c) + PopCount(m) }
-  val l2hitPfInMSHRNoWhereGet = PopCount(l2hitPfInMSHRNoWhereGetVec.flatten)
   val l2pfLateVec = l2pfLateInCache.zip(l2pfLateInMSHR).map { case (c, m) => PopCount(c) + PopCount(m) }
-  val l2hitMatrixPfInCacheNoWhere = dirResultMatchVec(
-    r => r.replacerInfo.reqSource === MemReqSource.NoWhere.id.U && r.hit &&
-      r.meta.prefetch.getOrElse(false.B) &&
-      (r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Matrix.id.U)
-  )
-  val l2hitMatrixPfInCacheDemandLike = dirResultMatchVec(
-    r => (MemReqSource.isCPUReq(r.replacerInfo.reqSource) || r.replacerInfo.reqSource === MemReqSource.NoWhere.id.U) &&
-      r.hit && r.meta.prefetch.getOrElse(false.B) &&
-      (r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === PfSource.Matrix.id.U)
-  )
-  val l2missNoWhere = dirResultMatchVec(
-    r => r.replacerInfo.reqSource === MemReqSource.NoWhere.id.U && !r.hit
-  )
   val l2demandMiss = dirResultMatchVec(
     r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && !r.hit
   )
@@ -205,10 +188,6 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("l2prefetchHit", l2hitPfVec.reduce(_ + _))
   XSPerfAccumulate("l2prefetchHitInCache", PopCount(l2hitPfInCacheVec.flatten))
   XSPerfAccumulate("l2prefetchHitInMSHR", PopCount(l2hitPfInMSHRVec.flatten))
-  XSPerfAccumulate("l2prefetchHitInMSHRNoWhereGet", l2hitPfInMSHRNoWhereGet)
-  XSPerfAccumulate("l2prefetchHitInCacheMatrixNoWhere", PopCount(l2hitMatrixPfInCacheNoWhere))
-  XSPerfAccumulate("l2prefetchHitInCacheMatrixDemandLike", PopCount(l2hitMatrixPfInCacheDemandLike))
-  XSPerfAccumulate("l2NoWhereMiss", PopCount(l2missNoWhere))
   XSPerfAccumulate("l2prefetchLate", l2pfLateVec.reduce(_ + _))
   XSPerfAccumulate("l2prefetchLateInCache", PopCount(l2pfLateInCache.flatten))
   XSPerfAccumulate("l2prefetchLateInMSHR", PopCount(l2pfLateInMSHR.flatten))
@@ -222,7 +201,6 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     XSPerfAccumulate(s"l2prefetchHit$name", l2hitPfVec(i))
     XSPerfAccumulate(s"l2prefetchHitInCache$name", PopCount(l2hitPfInCacheVec(i)))
     XSPerfAccumulate(s"l2prefetchHitInMSHR$name", PopCount(l2hitPfInMSHRVec(i)))
-    XSPerfAccumulate(s"l2prefetchHitInMSHR${name}NoWhereGet", PopCount(l2hitPfInMSHRNoWhereGetVec(i)))
     XSPerfAccumulate(s"l2prefetchLate$name", l2pfLateVec(i))
     XSPerfAccumulate(s"l2prefetchLateInCache$name", PopCount(l2pfLateInCache(i)))
     XSPerfAccumulate(s"l2prefetchLateInMSHR$name", PopCount(l2pfLateInMSHR(i)))

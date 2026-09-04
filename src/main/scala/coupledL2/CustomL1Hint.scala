@@ -32,45 +32,6 @@ class HintQueueEntry(implicit p: Parameters) extends L2Bundle {
   val isMatrixData = Bool()
 }
 
-class CustomL1HintTraceEntry(implicit p: Parameters) extends L2Bundle {
-  val bank = UInt(8.W)
-  val cycle = UInt(64.W)
-  val queueCount = UInt(8.W)
-  val queueFull = Bool()
-  val queueDeqValid = Bool()
-  val queueDeqReady = Bool()
-  val queueDeqFire = Bool()
-  val queueDeqSource = UInt(sourceIdBits.W)
-  val queueDeqHasData = Bool()
-  val queueDeqIsMatrixData = Bool()
-  val s3Valid = Bool()
-  val s3Ready = Bool()
-  val s3Fire = Bool()
-  val s3Opcode = UInt(4.W)
-  val s3Source = UInt(sourceIdBits.W)
-  val s3MatrixTask = Bool()
-  val s3MshrTask = Bool()
-  val s3NeedMshr = Bool()
-  val s3HasData = Bool()
-  val s1Valid = Bool()
-  val flowS1Fire = Bool()
-  val dropS1Fire = Bool()
-  val queueEnqValid = Bool()
-  val queueEnqReady = Bool()
-  val queueEnqFire = Bool()
-  val queueEnqSource = UInt(sourceIdBits.W)
-  val queueEnqHasData = Bool()
-  val queueEnqIsMatrixData = Bool()
-  val matrixDataOutReady = Bool()
-  val matrixDataOutFire = Bool()
-  val l1HintValid = Bool()
-  val l1HintReady = Bool()
-  val l1HintFire = Bool()
-  val l1HintSource = UInt(sourceIdBits.W)
-  val l1HintHasData = Bool()
-  val s3Blocked = Bool()
-}
-
 class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   // input information
   val mshrHintQInfo = Flipped(ValidIO(new TaskBundle()))
@@ -187,55 +148,5 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
 
   when(matrixDataOutFire) {
     assert(deqIsMatrixData, "MatrixDataOut fired without a matching Matrix AccessAckData hint entry")
-  }
-
-  if (!cacheParams.FPGAPlatform) {
-    val traceTable = ChiselDB.createTable("L2CustomL1HintTrace", new CustomL1HintTraceEntry, basicDB = true)
-    val trace = WireInit(0.U.asTypeOf(new CustomL1HintTraceEntry))
-    val traceCycle = RegInit(0.U(64.W))
-    traceCycle := traceCycle + 1.U
-    trace.bank := p(SliceIdKey).U
-    trace.cycle := traceCycle
-    trace.queueCount := hintQueue.io.count
-    trace.queueFull := !hintQueue.io.enq.ready
-    trace.queueDeqValid := hintQueue.io.deq.valid
-    trace.queueDeqReady := hintQueue.io.deq.ready
-    trace.queueDeqFire := hintQueue.io.deq.fire
-    trace.queueDeqSource := hintQueue.io.deq.bits.source
-    trace.queueDeqHasData := hintQueue.io.deq.bits.hasData
-    trace.queueDeqIsMatrixData := hintQueue.io.deq.bits.isMatrixData
-    trace.s3Valid := enq_s3.valid
-    trace.s3Ready := enq_s3.ready
-    trace.s3Fire := enq_s3.fire
-    trace.s3Opcode := task_s3.bits.opcode
-    trace.s3Source := task_s3.bits.sourceId
-    trace.s3MatrixTask := task_s3.bits.matrixTask.getOrElse(false.B)
-    trace.s3MshrTask := task_s3.bits.mshrTask
-    trace.s3NeedMshr := need_mshr_s3
-    trace.s3HasData := enq_s3.bits.hasData
-    trace.s1Valid := valid_s1
-    trace.flowS1Fire := flow_s1.fire
-    trace.dropS1Fire := drop_s1.fire
-    trace.queueEnqValid := hintQueue.io.enq.valid
-    trace.queueEnqReady := hintQueue.io.enq.ready
-    trace.queueEnqFire := hintQueue.io.enq.fire
-    trace.queueEnqSource := hintQueue.io.enq.bits.source
-    trace.queueEnqHasData := hintQueue.io.enq.bits.hasData
-    trace.queueEnqIsMatrixData := hintQueue.io.enq.bits.isMatrixData
-    trace.matrixDataOutReady := deqIsMatrixData
-    trace.matrixDataOutFire := matrixDataOutFire
-    trace.l1HintValid := io.l1Hint.valid
-    trace.l1HintReady := io.l1Hint.ready
-    trace.l1HintFire := io.l1Hint.fire
-    trace.l1HintSource := io.l1Hint.bits.sourceId
-    trace.l1HintHasData := io.l1Hint.bits.hasData
-    trace.s3Blocked := enq_s3.valid && !enq_s3.ready
-    traceTable.log(
-      trace,
-      enq_s3.valid || valid_s1 || hintQueue.io.deq.valid || trace.s3Blocked,
-      s"L2_${p(SliceIdKey)}",
-      clock,
-      reset
-    )
   }
 }

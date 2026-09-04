@@ -10,7 +10,7 @@ import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config._
 import xscache.coupledL2._
-import xscache.coupledL2.prefetch.MatrixPrefetchParameters
+import xscache.coupledL2.prefetch.{MatrixPrefetchControl, MatrixPrefetchParameters, MatrixPrefetchTagField}
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.chi._
 import utility._
@@ -119,7 +119,6 @@ class TestTopMatrix(
       hartId = i
     )
     case EnableMatrix => true
-    case MatrixPrefetchDefaultEnable => matrixPrefetchEnable
     case CHIIssue => issue
     case BankBitsKey => log2Ceil(banks)
     case MaxHartIdBits => log2Up(numCores)
@@ -312,7 +311,7 @@ class TestTopMatrix(
       // low so that adding another engine to the test configuration cannot
       // silently change the matrix-prefetch A/B comparison.
       l2.module.io.pfCtrlFromCore := 0.U.asTypeOf(l2.module.io.pfCtrlFromCore)
-      l2.module.io.matrixPrefetch := matrixPrefetch
+      l2.module.io.matrixPrefetch.foreach(_ := matrixPrefetch)
       l2.module.io.nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
       matrixDataOut(i) <> l2.module.io.matrixDataOut.get
@@ -426,7 +425,7 @@ Usage: TestTopMatrix [<--option> <values>]
       ways = TestTopMatrixParams.l2Ways,
       sets = TestTopMatrixParams.l2Sets,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
-      prefetch = Seq(MatrixPrefetchParameters()),
+      prefetch = if (matrixPrefetchEnable) Seq(MatrixPrefetchParameters()) else Nil,
       enablePerf = enablePerf,
       enableRollingDB = false,
       enableMonitor = false,
@@ -438,7 +437,6 @@ Usage: TestTopMatrix [<--option> <values>]
       dataCheck = Some("oddparity"),
       sam = Seq(AddressSet.everything -> 33)
     )
-    case MatrixPrefetchDefaultEnable => matrixPrefetchEnable
     case OpenLLCParamKey => OpenLLCParam(
       ways = TestTopMatrixParams.l3Ways,
       sets = TestTopMatrixParams.l3Sets,

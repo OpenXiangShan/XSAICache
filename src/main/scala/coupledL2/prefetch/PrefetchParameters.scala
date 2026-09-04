@@ -29,12 +29,6 @@ trait PrefetchParameters {
   val inflightEntries: Int // max num of inflight prefetch reqs
 }
 
-/** Instantiate the shared L2 prefetch path for the matrix-guided engine only. */
-case class MatrixPrefetchParameters(inflightEntries: Int = 32) extends PrefetchParameters {
-  override val hasPrefetchBit: Boolean = true
-  override val hasPrefetchSrc: Boolean = true
-}
-
 trait HasPrefetchParameters extends HasCoupledL2Parameters {
   val inflightEntries = if(prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
   val matrixInflightEntries = prefetchers.collectFirst {
@@ -60,10 +54,7 @@ object PfSource extends Enumeration {
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
 
-  // utility does not yet allocate a dedicated MemReqSource value for Matrix.
-  // Keep the external request encoding compatible with the upstream utility
-  // submodule and distinguish Matrix traffic with the L2-local PfSource tag.
-  val matrixMemReqSource = MemReqSource.Prefetch2L2Unknown
+  val matrixMemReqSource = MemReqSource.Prefetch2L2Matrix
 
   def fromMemReqSource(s: UInt): UInt = {
     val pfsrc = WireInit(NoWhere.id.U.asTypeOf(UInt(pfSourceBits.W)))

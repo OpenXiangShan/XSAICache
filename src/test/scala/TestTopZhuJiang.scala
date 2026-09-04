@@ -203,7 +203,6 @@ class TestTopZhuJiang(
       l2.module.io.nodeID := ccNodes(i).nodeId.U
       l2.module.io.hartId := i.U
       l2.module.io.pfCtrlFromCore := 0.U.asTypeOf(l2.module.io.pfCtrlFromCore)
-      l2.module.io.matrixPrefetch := 0.U.asTypeOf(l2.module.io.matrixPrefetch)
       l2.module.io.l2_tlb_req := DontCare
       l2.module.io.debugTopDown.robTrueCommit := 0.U
       l2.module.io.debugTopDown.robHeadPaddr.valid := false.B

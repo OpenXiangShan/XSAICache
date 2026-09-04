@@ -25,38 +25,10 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import xscache.coupledL2._
-import xscache.coupledL2.prefetch.{PrefetchTrain, PfSource}
+import xscache.coupledL2.prefetch.{MatrixPrefetchTagCodec, PrefetchTrain, PfSource}
 import xscache.coupledL2.MetaData._
 import xscache.chi.{CHIREQ, HasCHIOpcodes}
 import xscache.chi.CHICohStates._
-
-class L2GetTraceEntry(implicit p: Parameters) extends L2Bundle {
-  val bank = UInt(8.W)
-  val address = UInt(fullAddressBits.W)
-  val sourceId = UInt(sourceIdBits.W)
-  val reqSource = UInt(MemReqSource.reqSourceBits.W)
-  val hit = Bool()
-  val isPrefetched = Bool()
-  val prefetchSource = UInt(PfSource.pfSourceBits.W)
-}
-
-class L2MainPipeTraceEntry(implicit p: Parameters) extends L2Bundle {
-  val bank = UInt(8.W)
-  val cycle = UInt(64.W)
-  val sourceId = UInt(sourceIdBits.W)
-  val opcode = UInt(4.W)
-  val responseOpcode = UInt(4.W)
-  val fromA = Bool()
-  val mshrTask = Bool()
-  val matrixTask = Bool()
-  val sinkRespValid = Bool()
-  val needMshr = Bool()
-  val dirHit = Bool()
-  val reqDrop = Bool()
-  val grantBufferPath = Bool()
-  val grantBufferFire = Bool()
-  val hintCandidate = Bool()
-}
 
 class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes with HasPerfEvents {
   val io = IO(new Bundle() {
@@ -1090,66 +1062,6 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
   XSPerfAccumulate("acquire_miss", miss_s3 && req_s3.fromA &&
     (req_s3.opcode === AcquireBlock || req_s3.opcode === AcquirePerm))
   XSPerfAccumulate("get_miss", miss_s3 && req_s3.fromA && req_s3.opcode === Get)
-
-  // The legacy debug Monitor owns the L2MP ChiselDB table. It used to be
-  // defined but not instantiated, leaving no address-bearing MainPipe trace
-  // in full-system runs.
-  if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
-    val monitor = Module(new xscache.coupledL2.debug.Monitor)
-    monitor.io.fromMainPipe.task_s2 := task_s2
-    monitor.io.fromMainPipe.task_s3 := task_s3
-    monitor.io.fromMainPipe.task_s4 := task_s4
-    monitor.io.fromMainPipe.task_s5 := task_s5
-    monitor.io.fromMainPipe.dirResult_s3 := dirResult_s3
-    monitor.io.fromMainPipe.allocMSHR_s3.valid := io.toMSHRCtl.mshr_alloc_s3.valid
-    monitor.io.fromMainPipe.allocMSHR_s3.bits := io.fromMSHRCtl.mshr_alloc_ptr
-    monitor.io.fromMainPipe.metaW_s3 := io.metaWReq
-  }
-
-  // Address-level demand Get trace used to compare cache outcomes with and
-  // without Matrix prefetching.  A common table plus SITE preserves the
-  // per-slice request order while keeping the database easy to join.
-  if (!cacheParams.FPGAPlatform) {
-    val mainPipeTraceTable = ChiselDB.createTable("L2MainPipeTrace", new L2MainPipeTraceEntry, basicDB = true)
-    val mainPipeTrace = WireInit(0.U.asTypeOf(new L2MainPipeTraceEntry))
-    val traceCycle = RegInit(0.U(64.W))
-    traceCycle := traceCycle + 1.U
-    val hintCandidate = !mshr_req_s3 && !need_mshr_s3_a && req_s3.fromA &&
-      Seq(Grant, GrantData, AccessAckData, AccessAck).map(_ === source_req_s3.opcode).reduce(_ || _)
-    mainPipeTrace.bank := p(SliceIdKey).U
-    mainPipeTrace.cycle := traceCycle
-    mainPipeTrace.sourceId := req_s3.sourceId
-    mainPipeTrace.opcode := req_s3.opcode
-    mainPipeTrace.responseOpcode := source_req_s3.opcode
-    mainPipeTrace.fromA := req_s3.fromA
-    mainPipeTrace.mshrTask := req_s3.mshrTask
-    mainPipeTrace.matrixTask := req_s3.matrixTask.getOrElse(false.B)
-    mainPipeTrace.sinkRespValid := sink_resp_s3.valid
-    mainPipeTrace.needMshr := need_mshr_s3
-    mainPipeTrace.dirHit := dirResult_s3.hit
-    mainPipeTrace.reqDrop := req_drop_s3
-    mainPipeTrace.grantBufferPath := isD_s3
-    mainPipeTrace.grantBufferFire := d_s3.fire
-    mainPipeTrace.hintCandidate := hintCandidate
-    mainPipeTraceTable.log(mainPipeTrace, task_s3.valid, s"L2_${p(SliceIdKey)}", clock, reset)
-
-    val getTraceTable = ChiselDB.createTable("L2GetTrace", new L2GetTraceEntry, basicDB = true)
-    val getTrace = WireInit(0.U.asTypeOf(new L2GetTraceEntry))
-    getTrace.bank := p(SliceIdKey).U
-    getTrace.address := restoreAddress(Cat(req_s3.tag, req_s3.set, req_s3.off), p(SliceIdKey))
-    getTrace.sourceId := req_s3.sourceId
-    getTrace.reqSource := req_s3.reqSource
-    getTrace.hit := dirResult_s3.hit
-    getTrace.isPrefetched := dirResult_s3.meta.prefetch.getOrElse(false.B)
-    getTrace.prefetchSource := dirResult_s3.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)
-    getTraceTable.log(
-      data = getTrace,
-      en = task_s3.valid && !mshr_req_s3 && req_s3.fromA && req_s3.opcode === Get,
-      site = s"L2_${p(SliceIdKey)}",
-      clock,
-      reset
-    )
-  }
 
   XSPerfAccumulate("a_need_acquire_on_hit", task_s3.valid && req_s3.fromA && dirResult_s3.hit && acquire_on_hit_s3)
   XSPerfAccumulate("a_need_acquire_on_miss", task_s3.valid && req_s3.fromA && !dirResult_s3.hit && acquire_on_miss_s3)

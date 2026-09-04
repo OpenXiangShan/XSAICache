@@ -23,7 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
-import xscache.coupledL2.prefetch.PrefetchReq
+import xscache.coupledL2.prefetch.{MatrixPrefetchTagKey, PrefetchReq}
 import utility.{MemReqSource, XSPerfAccumulate}
 import xscache.common.{AliasKey, PrefetchKey}
 

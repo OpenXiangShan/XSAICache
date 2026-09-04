@@ -18,7 +18,7 @@
 package xscache.coupledL2
 
 import chisel3._
-import chisel3.util.{Cat, Valid, log2Ceil}
+import chisel3.util.log2Ceil
 import freechips.rocketchip.diplomacy.{AddressSet, BufferParams}
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.util._
@@ -30,7 +30,6 @@ import xscache.common.{AliasKey, CacheParameters, IsHitKey, PrefetchKey, BankBit
 case object EnableL2ClockGate extends Field[Boolean](true)
 case object EnableMatrix extends Field[Boolean](false)
 case object EnableL2DecoupledDownstreamCHI extends Field[Boolean](false)
-case object MatrixPrefetchDefaultEnable extends Field[Boolean](false)
 
 // L1 Cache Params, used for TestTop generation
 case class L1Param
@@ -75,54 +74,6 @@ case class AmeChannelField() extends BundleField[UInt](AmeChannelKey, Output(UIn
 
 case object AmeIndexKey extends ControlKey[UInt](name = "AmeIndex")
 case class AmeIndexField() extends BundleField[UInt](AmeIndexKey, Output(UInt(64.W)), _ := 0.U(64.W))
-
-object MatrixPrefetchStream {
-  val width = 3
-  val none = 0.U(width.W)
-  val a = 1.U(width.W)
-  val b = 2.U(width.W)
-  val cLoad = 3.U(width.W)
-  val cStore = 4.U(width.W)
-  val aScale = 5.U(width.W)
-  val bScale = 6.U(width.W)
-}
-
-object MatrixPrefetchTagCodec {
-  val taskIdWidth = 16
-  val width = 1 + MatrixPrefetchStream.width + taskIdWidth
-
-  def encode(valid: Bool, stream: UInt, taskId: UInt): UInt =
-    Cat(valid, stream(MatrixPrefetchStream.width - 1, 0), taskId(taskIdWidth - 1, 0))
-
-  def valid(tag: UInt): Bool = tag(width - 1)
-  def stream(tag: UInt): UInt = tag(taskIdWidth + MatrixPrefetchStream.width - 1, taskIdWidth)
-  def taskId(tag: UInt): UInt = tag(taskIdWidth - 1, 0)
-}
-
-case object MatrixPrefetchTagKey extends ControlKey[UInt](name = "MatrixPrefetchTag")
-case class MatrixPrefetchTagField()
-  extends BundleField[UInt](MatrixPrefetchTagKey, Output(UInt(MatrixPrefetchTagCodec.width.W)), _ := 0.U)
-
-class MatrixPrefetchDesc extends Bundle {
-  val taskId = UInt(MatrixPrefetchTagCodec.taskIdWidth.W)
-  val stream = UInt(MatrixPrefetchStream.width.W)
-  val baseAddr = UInt(64.W)
-  val outerStride = UInt(64.W)
-  val outerCount = UInt(16.W)
-  val innerCount = UInt(16.W)
-  val rowBytes = UInt(32.W)
-  val groupWidth = UInt(16.W)
-  val transpose = Bool()
-  val pc = UInt(64.W)
-}
-
-class MatrixPrefetchControl extends Bundle {
-  val allocate = Valid(new MatrixPrefetchDesc)
-  val activate = Valid(UInt(MatrixPrefetchTagCodec.width.W))
-  val retire = Valid(UInt(MatrixPrefetchTagCodec.width.W))
-  val cStoreStart = Valid(UInt(MatrixPrefetchTagCodec.width.W))
-  val cStoreEnd = Valid(UInt(MatrixPrefetchTagCodec.width.W))
-}
 
 //memblock pass pc of load_miss to l2
 case object PCKey extends ControlKey[UInt]("pc")

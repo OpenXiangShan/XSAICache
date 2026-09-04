@@ -23,6 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink.TLPermissions._
 import utility.MemReqSource
 import xscache.chi.{CHIREQ, HasCHIMsgParameters, MemAttr, MPAM, OrderEncodings}
+import xscache.coupledL2.prefetch.MatrixPrefetchTagCodec
 
 abstract class L2Module(implicit val p: Parameters) extends Module with HasCoupledL2Parameters
 abstract class L2Bundle(implicit val p: Parameters) extends Bundle with HasCoupledL2Parameters
