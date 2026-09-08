@@ -297,7 +297,9 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
   // when entry.rdy is no longer true,
   // we cancel req in chosenQ, with the entry still held in buffer to issue later
 //  val cancel = (canFlow && sameSet(chosenQ.io.deq.bits.bits.task, io.in.bits)) || !buffer(chosenQ.io.deq.bits.id).rdy
-  val cancel = !Mux1H(chosenQ.io.deq.bits.idOH, buffer.map(e => e.rdy && !prefetchBlocked(e.task)))
+  // Throttling is checked before a prefetch enters chosenQ. Once selected, only a
+  // readiness change may cancel it; otherwise a one-cycle throttle window can livelock.
+  val cancel = !Mux1H(chosenQ.io.deq.bits.idOH, buffer.map(_.rdy))
 
   chosenQ.io.deq.ready := io.out.ready || cancel
   io.out.valid := chosenQValid && !cancel || io.in.valid && canFlow
