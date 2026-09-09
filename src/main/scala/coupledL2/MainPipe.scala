@@ -25,7 +25,7 @@ import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLPermissions._
 import org.chipsalliance.cde.config.Parameters
 import xscache.coupledL2._
-import xscache.coupledL2.prefetch.{PrefetchTrain, PfSource}
+import xscache.coupledL2.prefetch.{MatrixPrefetchTagCodec, PrefetchTrain, PfSource}
 import xscache.coupledL2.MetaData._
 import xscache.chi.{CHIREQ, HasCHIOpcodes}
 import xscache.chi.CHICohStates._
@@ -731,10 +731,17 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
   /* ======== prefetch ======== */
   io.prefetchTrain.foreach {
     train =>
+      val matrixPrefetchTag = Mux(
+        req_s3.mergeA,
+        req_s3.aMergeTask.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W)),
+        req_s3.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W))
+      )
+      val matrixTrain = req_get_s3 && MatrixPrefetchTagCodec.valid(matrixPrefetchTag)
       // train on request(with needHint flag) miss or hit on prefetched block
       // trigger train also in a_merge here
-      train.valid := task_s3.valid && ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
-        (!dirResult_s3.hit || metaOnHit_s3.prefetch.get) || req_s3.mergeA)
+      train.valid := task_s3.valid && (matrixTrain ||
+        ((req_acquire_s3 || req_get_s3) && req_s3.needHint.getOrElse(false.B) &&
+          (!dirResult_s3.hit || metaOnHit_s3.prefetch.get) || req_s3.mergeA))
       train.bits.tag := req_s3.tag
       train.bits.set := req_s3.set
       train.bits.needT := Mux(
@@ -751,6 +758,7 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
       train.bits.prefetched := Mux(req_s3.mergeA, true.B, metaOnHit_s3.prefetch.getOrElse(false.B))
       train.bits.pfsource := Mux(req_s3.mergeA, req_s3.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U), metaOnHit_s3.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)) // TODO
       train.bits.reqsource := req_s3.reqSource
+      train.bits.matrixPrefetchTag.foreach(_ := matrixPrefetchTag)
       
   }
 

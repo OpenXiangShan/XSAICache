@@ -133,6 +133,7 @@ class GrantBuffer(implicit p: Parameters) extends L2Module {
   mergeAtask.param := io.d_task.bits.task.aMergeTask.param
   mergeAtask.sourceId := io.d_task.bits.task.aMergeTask.sourceId
   mergeAtask.meta := io.d_task.bits.task.aMergeTask.meta
+  mergeAtask.matrixPrefetchTag.foreach(_ := io.d_task.bits.task.aMergeTask.matrixPrefetchTag.getOrElse(0.U))
   mergeAtask.set := io.d_task.bits.task.set
   mergeAtask.tag := io.d_task.bits.task.tag
   mergeAtask.vaddr.foreach(_ := io.d_task.bits.task.vaddr.getOrElse(0.U))

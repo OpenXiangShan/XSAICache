@@ -452,6 +452,21 @@ class Directory(implicit p: Parameters) extends L2Module {
   XSPerfAccumulate("dirRead_cnt", io.read.fire)
   XSPerfAccumulate("choose_busy_way", reqValid_s3 && !Mux1H(chosenOH, req_s3.wayMask))
 
+  val matrixPrefetchSource = PfSource.Matrix.id.U
+  val dirMatrixPrefetchWrite = io.metaWReq.valid &&
+    io.metaWReq.bits.wmeta.prefetch.getOrElse(false.B) &&
+    (io.metaWReq.bits.wmeta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource)
+  val dirMatrixPrefetchRead = io.resp.valid && io.resp.bits.hit &&
+    io.resp.bits.meta.prefetch.getOrElse(false.B) &&
+    (io.resp.bits.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource) &&
+    (io.resp.bits.replacerInfo.reqSource === MemReqSource.MatrixRead.id.U)
+  val dirMatrixPrefetchEvict = io.replResp.valid && !io.replResp.bits.retry &&
+    Mux1H(finalReplOH, metaAll_s3).prefetch.getOrElse(false.B) &&
+    (Mux1H(finalReplOH, metaAll_s3).prefetchSrc.getOrElse(PfSource.NoWhere.id.U) === matrixPrefetchSource)
+  XSPerfAccumulate("dir_matrix_prefetch_write", dirMatrixPrefetchWrite)
+  XSPerfAccumulate("dir_matrix_prefetch_read", dirMatrixPrefetchRead)
+  XSPerfAccumulate("dir_matrix_prefetch_evict", dirMatrixPrefetchEvict)
+
   /* ====== ChiselDB logging for  prefetcher lifecycle ====== */
   if (cacheParams.enableMonitor && !cacheParams.FPGAPlatform) {
     val defaultPfSrc = PfSource.NoWhere.id.U

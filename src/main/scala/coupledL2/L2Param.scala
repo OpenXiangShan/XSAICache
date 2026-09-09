@@ -158,7 +158,8 @@ case class L2Param(
   // both EnablePrivateClint and PrivateClintRange are from soc parameters.
   PrivateClintRange: Option[AddressSet] = None
 ) {
-  def fullReqKey(enableMatrix: Boolean): Seq[BundleKeyBase] = reqKey ++ (if (enableMatrix) Seq(MatrixKey, AmeChannelKey, AmeIndexKey) else Nil)
+  def fullReqKey(enableMatrix: Boolean): Seq[BundleKeyBase] = reqKey ++
+    (if (enableMatrix) Seq(MatrixKey, AmeChannelKey, AmeIndexKey, MatrixPrefetchTagKey) else Nil)
   def toCacheParams: CacheParameters = CacheParameters(
     name = name,
     sets = sets,
