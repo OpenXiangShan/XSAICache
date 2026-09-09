@@ -896,6 +896,8 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
     mp_dct.ameIndex.foreach(_ := req.ameIndex.getOrElse(0.U))
     mp_dct.mergeA := false.B
     mp_dct.aMergeTask := 0.U.asTypeOf(new MergeTaskBundle)
+    mp_dct.denied := denied
+    mp_dct.corrupt := corrupt
 
     // CHI
     mp_dct.tgtID.get := req.fwdNID.get
