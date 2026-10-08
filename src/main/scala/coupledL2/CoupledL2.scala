@@ -105,11 +105,14 @@ trait HasCoupledL2Parameters {
 
   // Prefetch
   def prefetchers = cacheParams.prefetch
+  // Prefetcher instantiation is controlled by L2Param.prefetch. Matrix support
+  // alone must not create a zero-entry legacy queue.
   def prefetchOpt = if(prefetchers.nonEmpty) Some(true) else None
   def hasBOP = prefetchers.exists(_.isInstanceOf[BOPParameters])
   def hasReceiver = prefetchers.exists(_.isInstanceOf[PrefetchReceiverParams])
   def hasTPPrefetcher = prefetchers.exists(_.isInstanceOf[TPParameters])
   def hasNLPrefetcher = prefetchers.exists(_.isInstanceOf[NLParameters])
+  def hasMatrixPrefetcher = prefetchers.exists(_.isInstanceOf[MatrixPrefetchParameters])
   def hasPrefetchBit = prefetchers.exists(_.hasPrefetchBit) // !! TODO.test this
   def hasPrefetchSrc = prefetchers.exists(_.hasPrefetchSrc)
   def chiOpt = Some(true)
@@ -377,6 +380,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     //  val l2_hint = Valid(UInt(32.W))
       val l2_hint = ValidIO(new L2ToL1Hint()(l2ECCParams))
       val matrixDataOut = Option.when(enableMatrix)(Vec(banks, DecoupledIO(new MatrixDataBundle())))
+      val matrixPrefetch = Option.when(hasMatrixPrefetcher)(Input(new MatrixPrefetchControl))
       val l2_tlb_req = new L2ToL1TlbIO(nRespDups = 1)(l2TlbParams)
       val debugTopDown = new Bundle {
         val robTrueCommit = Input(UInt(64.W))
@@ -464,6 +468,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
         }
         prefetcher.get.hartId := io.hartId
         prefetcher.get.pfCtrlFromCore := io.pfCtrlFromCore
+        prefetcher.get.io.matrixPrefetch.foreach(_ := io.matrixPrefetch.get)
         prefetcher.get.io.resp <> prefetchResps.get
         prefetcher.get.io.tlb_req <> io.l2_tlb_req
     }

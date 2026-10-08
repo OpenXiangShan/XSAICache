@@ -9,6 +9,7 @@ WITH_CHILOG ?= 1
 BY_ETIME ?= 1
 BY_VTIME ?= 0
 FPGA ?= 0
+MATRIX_PREFETCH ?= 0
 
 init:
 	git submodule update --init
@@ -29,6 +30,7 @@ CHI_TOP_ARGS = --issue $(ISSUE) --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --bank $
 		       --fpga $(FPGA)
 MATRIX_TOP_ARGS = --core $(NUM_CORE) --tl-ul $(NUM_TL_UL) --m-agent $(NUM_M_AGENT) --bank $(NUM_SLICE) \
 		   	   --chiseldb $(WITH_CHISELDB) --tllog $(WITH_TLLOG) \
+			   --matrix-prefetch $(MATRIX_PREFETCH) \
 		       --fpga $(FPGA)
 BUILD_DIR_L2 = ./build/coupledl2
 BUILD_DIR_LLC = ./build/openllc

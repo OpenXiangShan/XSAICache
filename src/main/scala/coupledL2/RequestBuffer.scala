@@ -123,9 +123,11 @@ class RequestBuffer(flow: Boolean = true, entries: Int = 4)(implicit p: Paramete
     conflictMask(a) & VecInit(io.mshrInfo.map(_.bits.fromA)).asUInt
 
   def latePrefetch(a: TaskBundle): (Bool, UInt) = {
+    val isDemandRead = (a.opcode === AcquireBlock || a.opcode === AcquirePerm) ||
+      (a.opcode === Get && a.reqSource === MemReqSource.MatrixRead.id.U)
     val matchVec = VecInit(io.mshrInfo.map(s =>
     s.valid && s.bits.isPrefetch && sameAddr(a, s.bits) && !s.bits.willFree &&
-      a.fromA && (a.opcode === AcquireBlock || a.opcode === AcquirePerm)
+      a.fromA && isDemandRead
     ))
     val matched = matchVec.asUInt.orR
     assert(PopCount(matchVec) <= 1.U, "Multiple late prefetch MSHRs matched")

@@ -10,6 +10,7 @@ import freechips.rocketchip.tile.MaxHartIdBits
 import freechips.rocketchip.tilelink._
 import org.chipsalliance.cde.config._
 import xscache.coupledL2._
+import xscache.coupledL2.prefetch.{MatrixPrefetchControl, MatrixPrefetchParameters, MatrixPrefetchTagField}
 import cc.xiangshan.openncb._
 import cc.xiangshan.openncb.chi._
 import utility._
@@ -20,13 +21,13 @@ import xscache.common.{AliasField, BankBitsKey}
 import scala.collection.mutable.ArrayBuffer
 
 object TestTopMatrixParams {
-  val l2Sets: Int = 64
+  val l2Sets: Int = 512
   val l2Ways: Int = 8
-  val l3CDirSets: Int = 128
-  val l3CDirWays: Int = 6
-  val l3Sets: Int = 512
-  val l3Ways: Int = 8
-  val l3Banks: Int = 1
+  val l3CDirSets: Int = 1024
+  val l3CDirWays: Int = 10
+  val l3Sets: Int = 4096
+  val l3Ways: Int = 16
+  val l3Banks: Int = 4
 }
 
 class TestTopMatrix(
@@ -34,6 +35,7 @@ class TestTopMatrix(
   numULAgents: Int = 0,
   numMAgents: Int = 1,
   banks: Int = 1,
+  matrixPrefetchEnable: Boolean = false,
   issue: String = Issue.Eb,
   extTime: Boolean = true
 )(implicit p: Parameters) extends LazyModule with HasCHIMsgParameters {
@@ -85,7 +87,7 @@ class TestTopMatrix(
         channelBytes = TLChannelBeatBytes(l2Params.blockBytes),
         minLatency = 1,
         echoFields = Nil,
-        requestFields = Seq(MatrixField(2), AmeIndexField()),
+        requestFields = Seq(MatrixField(2), AmeIndexField(), MatrixPrefetchTagField()),
         responseKeys = l2Params.respKey
       )
     ))
@@ -210,6 +212,10 @@ class TestTopMatrix(
     })
 
     val matrixDataOut = IO(Vec(numCores, Vec(banks, DecoupledIO(new MatrixDataBundle()))))
+    // tl-test-new replays the CUTE task-control sideband independently of the
+    // matrix TileLink ports.  The current matrix test target is single-core;
+    // broadcast the same control bundle if this top is elaborated with more.
+    val matrixPrefetch = IO(Input(new MatrixPrefetchControl))
 
     val io_l1 = l2_nodes.map { l2_node =>
       IO(new Bundle {
@@ -301,7 +307,11 @@ class TestTopMatrix(
       l2.module.io.l2_hint <> io_l1(i).l2Hint
 
       l2.module.io.hartId := i.U
-      l2.module.io.pfCtrlFromCore := DontCare
+      // No legacy prefetch engine is selected.  This control is still tied
+      // low so that adding another engine to the test configuration cannot
+      // silently change the matrix-prefetch A/B comparison.
+      l2.module.io.pfCtrlFromCore := 0.U.asTypeOf(l2.module.io.pfCtrlFromCore)
+      l2.module.io.matrixPrefetch.foreach(_ := matrixPrefetch)
       l2.module.io.nodeID := i.U(NODEID_WIDTH.W)
       l2.module.io.debugTopDown := DontCare
       matrixDataOut(i) <> l2.module.io.matrixDataOut.get
@@ -368,6 +378,7 @@ Usage: TestTopMatrix [<--option> <values>]
       --fpga <1>                generate for FPGA platform
       --chiseldb <1>            enable ChiselDB
       --tllog <1>               enable TLLogger under ChiselDB
+      --matrix-prefetch <1>     statically enable the matrix-guided L2 prefetcher
   """
 
   if (args.contains("--help")) {
@@ -385,6 +396,7 @@ Usage: TestTopMatrix [<--option> <values>]
   var onFPGAPlatform: Boolean = false
   var enableChiselDB: Boolean = false
   var enableTLLog: Boolean = false
+  var matrixPrefetchEnable: Boolean = false
 
   val varArgsToDrop = args.sliding(2, 1).zipWithIndex.collect {
     case (Array("--core", value), i) => (numCores = value.toInt, i)
@@ -394,6 +406,7 @@ Usage: TestTopMatrix [<--option> <values>]
     case (Array("--fpga", value), i) => (onFPGAPlatform = value.toInt != 0, i)
     case (Array("--chiseldb", value), i) => (enableChiselDB = value.toInt != 0, i)
     case (Array("--tllog", value), i) => (enableTLLog = value.toInt != 0, i)
+    case (Array("--matrix-prefetch", value), i) => (matrixPrefetchEnable = value.toInt != 0, i)
   }
 
   varArgsToDrop.map(_._2).foreach { i =>
@@ -412,6 +425,7 @@ Usage: TestTopMatrix [<--option> <values>]
       ways = TestTopMatrixParams.l2Ways,
       sets = TestTopMatrixParams.l2Sets,
       clientCaches = Seq(L1Param(aliasBitsOpt = Some(2))),
+      prefetch = if (matrixPrefetchEnable) Seq(MatrixPrefetchParameters()) else Nil,
       enablePerf = enablePerf,
       enableRollingDB = false,
       enableMonitor = false,
@@ -441,8 +455,13 @@ Usage: TestTopMatrix [<--option> <values>]
 
   CLogB.init(enableCHILog)
   ChiselDB.init(enableChiselDB_)
+  // Standalone tl-test does not link XiangShan's Constantin runtime.  Fold all
+  // records to their elaboration defaults; --matrix-prefetch selects 0 or 1.
+  Constantin.init(false)
 
-  val top = DisableMonitors(p => LazyModule(new TestTopMatrix(numCores, numULAgents, numMAgents, numBanks)(p)))(config)
+  val top = DisableMonitors(p => LazyModule(new TestTopMatrix(
+    numCores, numULAgents, numMAgents, numBanks, matrixPrefetchEnable
+  )(p)))(config)
 
   (new ChiselStage).execute(varArgs.toArray, Seq(
     ChiselGeneratorAnnotation(() => top.module),

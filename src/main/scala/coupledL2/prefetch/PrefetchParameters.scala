@@ -31,6 +31,9 @@ trait PrefetchParameters {
 
 trait HasPrefetchParameters extends HasCoupledL2Parameters {
   val inflightEntries = if(prefetchers.nonEmpty) prefetchers.map(_.inflightEntries).max else 0
+  val matrixInflightEntries = prefetchers.collectFirst {
+    case params: MatrixPrefetchParameters => params.inflightEntries
+  }.getOrElse(32)
 }
 
 abstract class PrefetchBundle(implicit val p: Parameters) extends Bundle with HasPrefetchParameters
@@ -46,9 +49,12 @@ object PfSource extends Enumeration {
   val TP      = Value("TP")
   val Berti   = Value("Berti")
   val NL      = Value("NL")  // Next-Line Prefetcher
+  val Matrix  = Value("Matrix")
 
   val PfSourceCount = Value("PfSourceCount")
   val pfSourceBits = log2Ceil(PfSourceCount.id)
+
+  val matrixMemReqSource = MemReqSource.Prefetch2L2Matrix
 
   def fromMemReqSource(s: UInt): UInt = {
     val pfsrc = WireInit(NoWhere.id.U.asTypeOf(UInt(pfSourceBits.W)))
@@ -61,6 +67,7 @@ object PfSource extends Enumeration {
       is (MemReqSource.Prefetch2L2Stride.id.U) { pfsrc := Stride.id.U }
       is (MemReqSource.Prefetch2L2Berti.id.U) { pfsrc := Berti.id.U }
       is (MemReqSource.Prefetch2L2NL.id.U) { pfsrc := NL.id.U } // The global ID of memReqSource is converted to the internal ID of the prefetcher
+      is (matrixMemReqSource.id.U) { pfsrc := Matrix.id.U }
     }
     pfsrc
   }

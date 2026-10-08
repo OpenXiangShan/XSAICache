@@ -23,7 +23,7 @@ import org.chipsalliance.cde.config.Parameters
 import freechips.rocketchip.tilelink._
 import freechips.rocketchip.tilelink.TLMessages._
 import freechips.rocketchip.tilelink.TLHints._
-import xscache.coupledL2.prefetch.PrefetchReq
+import xscache.coupledL2.prefetch.{MatrixPrefetchTagKey, PrefetchReq}
 import utility.{MemReqSource, XSPerfAccumulate}
 import xscache.common.{AliasKey, PrefetchKey}
 
@@ -106,6 +106,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.matrixTask.foreach(_ := MatrixInfo.isMatrix(matrixKey))
     task.ameChannel.foreach(_ := a.user.lift(AmeChannelKey).getOrElse("b1000".U))
     task.ameIndex.foreach(_ := a.user.lift(AmeIndexKey).getOrElse(0.U))
+    task.matrixPrefetchTag.foreach(_ := a.user.lift(MatrixPrefetchTagKey).getOrElse(0.U))
     task.vaddr.foreach(_ := a.user.lift(VaddrKey).getOrElse(0.U))
     task.pc.foreach(_ := a.user.lift(PCKey).getOrElse(0.U)) 
     //miss acquire keyword
@@ -150,6 +151,7 @@ class SinkA(implicit p: Parameters) extends L2Module {
     task.matrixTask.foreach(_ := false.B)
     task.ameChannel.foreach(_ := 0.U)
     task.ameIndex.foreach(_ := 0.U)
+    task.matrixPrefetchTag.foreach(_ := 0.U)
     task.vaddr.foreach(_ := req.vaddr.getOrElse(0.U))
     task.pc.foreach(_ := 0.U)  
     task.isKeyword.foreach(_ := false.B)
@@ -161,7 +163,11 @@ class SinkA(implicit p: Parameters) extends L2Module {
     val aTask = fromTLAtoTaskBundle(io.a.bits)
     aTask.bufIdx := Mux(a_putFull, io.pBufState.entryIdx, 0.U(bufIdxBits.W))
     val aTaskValid = io.a.valid && !cmoAllBlocksA && (!a_putFull || a_last)
-    val prefetchCanIssue = !io.a.valid && !putDataFirstValid && !cmoAllTaskValid
+    // A full-line Put uses two TileLink beats. The first beat only writes the
+    // PutBuffer and does not consume the MainPipe task port, so use that idle
+    // slot to drain one queued prefetch. The final Put beat and all ordinary
+    // A-channel tasks retain priority over prefetch traffic.
+    val prefetchCanIssue = !aTaskValid && !putDataFirstValid && !cmoAllTaskValid
     val prefetchTaskValid = io.prefetchReq.get.valid && prefetchCanIssue
     io.task.valid := aTaskValid || prefetchTaskValid || cmoAllTaskValid
     io.task.bits := Mux(
@@ -258,6 +264,8 @@ class SinkA(implicit p: Parameters) extends L2Module {
       XSPerfAccumulate("sinkA_prefetch_req", io.prefetchReq.get.fire)
       XSPerfAccumulate("sinkA_prefetch_from_l2", io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
       XSPerfAccumulate("sinkA_prefetch_from_l1", !io.prefetchReq.get.bits.fromL2 && io.prefetchReq.get.fire)
+      XSPerfAccumulate("sinkA_prefetch_with_put_first",
+        io.prefetchReq.get.fire && io.a.fire && a_putFull && a_first && !a_last)
   }
 
   // cycels stalled by mainpipe

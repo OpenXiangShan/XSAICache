@@ -129,10 +129,14 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
     ("Stream", (x: UInt) => x === MemReqSource.Prefetch2L2Stream.id.U, (y: UInt) => y === PfSource.Stream.id.U),
     ("NextLine", (x: UInt) => x === MemReqSource.Prefetch2L2NL.id.U, (y: UInt) => y === PfSource.NL.id.U),
     ("TP", (x: UInt) => x === MemReqSource.Prefetch2L2TP.id.U, (y: UInt) => y === PfSource.TP.id.U),
-    ("Berti", (x: UInt) => x === MemReqSource.Prefetch2L2Berti.id.U, (y: UInt) => y === PfSource.Berti.id.U)
+    ("Berti", (x: UInt) => x === MemReqSource.Prefetch2L2Berti.id.U, (y: UInt) => y === PfSource.Berti.id.U),
+    ("Matrix", (x: UInt) => x === PfSource.matrixMemReqSource.id.U, (y: UInt) => y === PfSource.Matrix.id.U)
   )
+  def isDemandRead(reqSource: UInt): Bool =
+    MemReqSource.isCPUReq(reqSource) || reqSource === MemReqSource.MatrixRead.id.U
+
   val lateHitTypes: Seq[(String, UInt => Bool, UInt => Bool)] = Seq(
-    ("Demand", (x: UInt) => MemReqSource.isCPUReq(x), (y: UInt) => y === PfSource.NoWhere.id.U),
+    ("Demand", (x: UInt) => isDemandRead(x), (y: UInt) => y === PfSource.NoWhere.id.U),
     ("L1Prefetch", (x: UInt) => MemReqSource.isL1Prefetch(x), (y: UInt) => y === PfSource.NoWhere.id.U),
   ) ++ pfTypes
 
@@ -140,7 +144,7 @@ class TopDownMonitor()(implicit p: Parameters) extends L2Module {
   val l2pfSentVec = pfTypes.map { case (_, reqSrcCheck, _) => io.pfSent.map(r => r.valid && reqSrcCheck(r.bits)) }
   val l2pfSentToPipeVec = pfTypes.map { case (_, reqSrcCheck, _) => dirResultMatchVec(r => reqSrcCheck(r.replacerInfo.reqSource)) }
   val l2hitPfInCacheVec = pfTypes.map { case (_, _, pfSrcCheck) =>
-    dirResultMatchVec(r => MemReqSource.isCPUReq(r.replacerInfo.reqSource) && r.hit &&
+    dirResultMatchVec(r => isDemandRead(r.replacerInfo.reqSource) && r.hit &&
       r.meta.prefetch.getOrElse(false.B) && pfSrcCheck(r.meta.prefetchSrc.getOrElse(PfSource.NoWhere.id.U)))
   }
   val l2hitPfInMSHRVec = pfTypes.map { case (_, reqSrcCheck, _) =>

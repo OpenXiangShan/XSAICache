@@ -126,13 +126,15 @@ class PrefetchReq(implicit p: Parameters) extends PrefetchBundle {
   def isSMS:Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP:Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def isNL:Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
+  def isMatrix: Bool = pfSource === PfSource.matrixMemReqSource.id.U
   def needAck:Bool = pfSource === MemReqSource.Prefetch2L2BOP.id.U || pfSource === MemReqSource.Prefetch2L2PBOP.id.U
   def fromL2:Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U
+      pfSource === MemReqSource.Prefetch2L2NL.id.U ||
+      pfSource === PfSource.matrixMemReqSource.id.U
 }
 
 class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
@@ -148,12 +150,14 @@ class PrefetchResp(implicit p: Parameters) extends PrefetchBundle {
   def isSMS: Bool = pfSource === MemReqSource.Prefetch2L2SMS.id.U
   def isTP: Bool = pfSource === MemReqSource.Prefetch2L2TP.id.U
   def isNL: Bool = pfSource === MemReqSource.Prefetch2L2NL.id.U
+  def isMatrix: Bool = pfSource === PfSource.matrixMemReqSource.id.U
   def fromL2: Bool =
     pfSource === MemReqSource.Prefetch2L2BOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2PBOP.id.U ||
       pfSource === MemReqSource.Prefetch2L2SMS.id.U ||
       pfSource === MemReqSource.Prefetch2L2TP.id.U  ||
-      pfSource === MemReqSource.Prefetch2L2NL.id.U
+      pfSource === MemReqSource.Prefetch2L2NL.id.U ||
+      pfSource === PfSource.matrixMemReqSource.id.U
 }
 
 class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
@@ -167,6 +171,7 @@ class PrefetchTrain(implicit p: Parameters) extends PrefetchBundle {
   val prefetched = Bool()
   val pfsource = UInt(PfSource.pfSourceBits.W)
   val reqsource = UInt(MemReqSource.reqSourceBits.W)
+  val matrixPrefetchTag = Option.when(enableMatrix)(UInt(MatrixPrefetchTagCodec.width.W))
 
   def addr: UInt = Cat(tag, set, 0.U(offsetBits.W))
 }
@@ -192,6 +197,7 @@ class PrefetchTopIO(implicit p: Parameters) extends PrefetchBundle {
     val addr = UInt(64.W)
     val pfSource = UInt(MemReqSource.reqSourceBits.W)
   }))
+  val matrixPrefetch = Option.when(hasMatrixPrefetcher)(Input(new MatrixPrefetchControl))
 }
 
 class Prefetcher(implicit p: Parameters) extends PrefetchModule {
@@ -257,11 +263,49 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val nl = if (hasNLPrefetcher) Some(Module(new NextLinePrefetch())) else None
   // prefetch from upper level
   val pfRcv = if (hasReceiver) Some(Module(new PrefetchReceiver())) else None
+  val matrixPf = if (hasMatrixPrefetcher) Some(Module(new MatrixGuidedPrefetcher)) else None
+
+  matrixPf.foreach { matrix =>
+    val matrixBOnAEnable = Constantin.createRecord(
+      s"l2_matrix_b_on_a_enable${cacheParams.hartId}",
+      initValue = 0
+    ).orR
+    val matrixCOnBEnable = Constantin.createRecord(
+      s"l2_matrix_c_on_b_enable${cacheParams.hartId}",
+      initValue = 0
+    ).orR
+    matrix.io.enable := true.B
+    matrix.io.enableBOnA := matrixBOnAEnable
+    matrix.io.enableCOnB := matrixCOnBEnable
+    matrix.io.control := io.matrixPrefetch.get
+    for (i <- 0 until banks) {
+      matrix.io.demand(i).valid := io.train(i).fire &&
+        MatrixPrefetchTagCodec.valid(
+          io.train(i).bits.matrixPrefetchTag.getOrElse(0.U(MatrixPrefetchTagCodec.width.W))
+        )
+      matrix.io.demand(i).bits := io.train(i).bits
+    }
+  }
 
   val train = Wire(DecoupledIO(new PrefetchTrain))
   val resp = Wire(DecoupledIO(new PrefetchResp))
   fastArb(io.train, train, Some("prefetch_train"))
   fastArb(io.resp, resp, Some("prefetch_resp"))
+
+  // The matrix-guided engine observes the per-bank train inputs directly and
+  // does not need a TLB or response consumer.  When it is the only selected
+  // prefetcher, terminate the shared legacy interfaces explicitly so the
+  // arbiter still accepts demand training and FIRRTL has no floating sinks.
+  if (!(hasBOP || hasNLPrefetcher || hasTPPrefetcher)) {
+    train.ready := true.B
+    resp.ready := true.B
+  }
+  if (!hasBOP) {
+    io.tlb_req.req.valid := false.B
+    io.tlb_req.req.bits := DontCare
+    io.tlb_req.req_kill := false.B
+    io.tlb_req.resp.ready := true.B
+  }
 
   // =================== Connection for each Prefetcher =====================
   // Rcv > NL >VBOP > PBOP > TP
@@ -316,15 +360,16 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   private val mbistPl = MbistPipeline.PlaceMbistPipeline(2, "MbistPipeL2Prefetcher", cacheParams.hasMbist && (hasBOP || hasTPPrefetcher))
 
   // =================== Connection of all Prefetchers =====================
-  /* prefetchers -> pftQueue -> pipe -> Slices.SinkA */
-  private val SRC_NUM = 5
-  private val Seq(rcv_idx, nl_idx, vbop_idx, pbop_idx, tp_idx) = (0 until SRC_NUM).toSeq
+  /* prefetchers -> per-source queues -> pipe -> Slices.SinkA */
+  private val SRC_NUM = 6
+  private val Seq(rcv_idx, nl_idx, vbop_idx, pbop_idx, tp_idx, matrix_idx) = (0 until SRC_NUM).toSeq
   val reqs = Seq(
     if (hasReceiver) Some(pfRcv.get.io.req) else None,
     if (hasNLPrefetcher) Some(nl.get.io.req) else None,
     if (hasBOP) Some(vbop.get.io.req) else None,
     if (hasBOP) Some(pbop.get.io.req) else None,
-    if (hasTPPrefetcher) Some(tp.get.io.req) else None
+    if (hasTPPrefetcher) Some(tp.get.io.req) else None,
+    matrixPf.map(_.io.req)
   )
   val reqsValid = reqs.map(_.map(_.valid).getOrElse(false.B))
   val reqsBits = reqs.map(_.map(_.bits).getOrElse(0.U.asTypeOf(new PrefetchReq)))
@@ -336,25 +381,65 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       hasFlow = true
     ))
   }
+  // Matrix descriptors describe a complete future A row, so silently
+  // replacing an old request creates permanent coverage holes. Keep Matrix
+  // traffic in a lossless queue and let ready backpressure the address walker.
+  // Legacy speculative prefetchers retain their overwrite behavior.
+  val matrixQueue = matrixPf.map { _ =>
+    Seq.tabulate(banks) { _ =>
+      Module(new Queue(
+        gen = new PrefetchReq,
+        entries = matrixInflightEntries,
+        pipe = false,
+        flow = true
+      ))
+    }
+  }
   val pipe = Seq.tabulate(banks) { _ => Module(new Pipeline(new PrefetchReq, 1)) }
   val select = Wire(Vec(banks, Vec(SRC_NUM, Bool())))
+  val legacySelect = Wire(Vec(banks, Vec(SRC_NUM, Bool())))
   val selectOH = Wire(Vec(banks, Vec(SRC_NUM, Bool())))
 
   for (i <- 0 until banks) {
     select(i) := VecInit(reqsValid.zip(reqsSetAddr).map {
       case (valid, addr) => valid && bank_eq(addr, i, bankBits)
     })
-    selectOH(i) := VecInit(PriorityEncoderOH(select(i).asUInt).asBools)
-    pftQueue(i).io.enq.valid := select(i).asUInt.orR
-    pftQueue(i).io.enq.bits := ParallelPriorityMux(select(i).asUInt, reqsBits)
-    pipe(i).io.in <> pftQueue(i).io.deq
+    legacySelect(i) := select(i)
+    legacySelect(i)(matrix_idx) := false.B
+    selectOH(i) := VecInit(FullPriorityOneHot(legacySelect(i).toSeq).asBools)
+    pftQueue(i).io.enq.valid := legacySelect(i).asUInt.orR
+    pftQueue(i).io.enq.bits := ParallelPriorityMux(legacySelect(i).asUInt, reqsBits)
+
+    matrixQueue match {
+      case Some(queues) =>
+        queues(i).io.enq.valid := select(i)(matrix_idx)
+        queues(i).io.enq.bits := reqsBits(matrix_idx)
+        val queueArb = Module(new RRArbiter(new PrefetchReq, 2))
+        queueArb.io.in(0) <> pftQueue(i).io.deq
+        queueArb.io.in(1) <> queues(i).io.deq
+        pipe(i).io.in <> queueArb.io.out
+      case None =>
+        pipe(i).io.in <> pftQueue(i).io.deq
+    }
     io.req(i) <> pipe(i).io.out
   }
 
   for ((reqOpt, j) <- reqs.zipWithIndex) {
-    reqOpt.foreach { req =>
-      req.ready := (0 until banks).map(i => selectOH(i)(j)).reduce(_ || _)
+    if (j != matrix_idx) {
+      reqOpt.foreach { req =>
+        req.ready := (0 until banks).map(i => selectOH(i)(j)).reduce(_ || _)
+      }
     }
+  }
+  matrixPf.foreach { matrix =>
+    val queues = matrixQueue.get
+    matrix.io.bankReady := VecInit(queues.map(_.io.enq.ready))
+    val matrixBestEffortWatermark = math.max(matrixInflightEntries / 4, 1)
+    matrix.io.bankBestEffortReady :=
+      VecInit(queues.map(_.io.count < matrixBestEffortWatermark.U))
+    matrix.io.req.ready := (0 until banks).map { i =>
+      select(i)(matrix_idx) && queues(i).io.enq.ready
+    }.reduce(_ || _)
   }
 
   val reqsFire = reqs.map(_.map(_.fire).getOrElse(false.B))
@@ -363,12 +448,28 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_train_in_valid", PopCount(io.train.map(_.valid)))
   XSPerfAccumulate("prefetch_resp_valid", resp.valid)
   XSPerfAccumulate("prefetch_resp_in_valid", PopCount(io.resp.map(_.valid)))
+  matrixPf.foreach { matrix =>
+    XSPerfAccumulate("matrix_prefetch_eligible", matrix.io.req.valid)
+    XSPerfAccumulate("matrix_prefetch_ready", matrix.io.req.ready)
+    XSPerfAccumulate("matrix_prefetch_fire", matrix.io.req.fire)
+  }
+  matrixQueue.foreach { queues =>
+    XSPerfAccumulate("matrix_prefetch_queue_enq", PopCount(queues.map(_.io.enq.fire)))
+    XSPerfAccumulate("matrix_prefetch_queue_deq", PopCount(queues.map(_.io.deq.fire)))
+    XSPerfAccumulate("matrix_prefetch_queue_full", PopCount(queues.map(_.io.count === matrixInflightEntries.U)))
+    for ((queue, i) <- queues.zipWithIndex) {
+      XSPerfAccumulate(s"matrix_prefetch_queue_enq_bank$i", queue.io.enq.fire)
+      XSPerfAccumulate(s"matrix_prefetch_queue_deq_bank$i", queue.io.deq.fire)
+      XSPerfAccumulate(s"matrix_prefetch_queue_full_bank$i", queue.io.count === matrixInflightEntries.U)
+    }
+  }
   XSPerfAccumulate("prefetch_req_fromL1", reqsValid(rcv_idx))
   XSPerfAccumulate("prefetch_req_fromVBOP", reqsValid(vbop_idx))
   XSPerfAccumulate("prefetch_req_fromPBOP", reqsValid(pbop_idx))
   XSPerfAccumulate("prefetch_req_fromBOP", reqsValid(vbop_idx) || reqsValid(pbop_idx))
   XSPerfAccumulate("prefetch_req_fromTP", reqsValid(tp_idx))
   XSPerfAccumulate("prefetch_req_fromNL", reqsValid(nl_idx))
+  XSPerfAccumulate("prefetch_req_fromMatrix", reqsValid(matrix_idx))
 
   XSPerfAccumulate("prefetch_req_selectL1", reqsFire(rcv_idx))
   XSPerfAccumulate("prefetch_req_selectVBOP", reqsFire(vbop_idx))
@@ -376,6 +477,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   XSPerfAccumulate("prefetch_req_selectBOP", reqsFire(vbop_idx) || reqsFire(pbop_idx))
   XSPerfAccumulate("prefetch_req_selectTP", reqsFire(tp_idx))
   XSPerfAccumulate("prefetch_req_selectNL", reqsFire(nl_idx))
+  XSPerfAccumulate("prefetch_req_selectMatrix", reqsFire(matrix_idx))
   XSPerfAccumulate("prefetch_req_SMS_other_overlapped",
     reqsValid(rcv_idx) &&
       (reqsValid(vbop_idx) || reqsValid(pbop_idx) || reqsValid(tp_idx) || reqsValid(nl_idx))
