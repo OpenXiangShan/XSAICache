@@ -37,6 +37,10 @@ class CustomL1HintIOBundle(implicit p: Parameters) extends L2Bundle {
   val mshrHintQInfo = Flipped(ValidIO(new TaskBundle()))
   val sinkCHintQInfo = Flipped(ValidIO(new TaskBundle()))
   val retry_s2 = Input(Bool())
+  // Sink-A tasks in S2/S3 have not generated their hints yet.
+  val pendingSinkHints = Input(UInt(2.W))
+  val blockSinkReqEntrance = Output(Bool())
+  val blockMSHRReqEntrance = Output(Bool())
   val matrixDataOutReady = Option.when(enableMatrix)(Output(Bool()))
   val matrixDataOutFire = Option.when(enableMatrix)(Input(Bool()))
 
@@ -115,10 +119,16 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   val canFlow_s1 = !hintQueue.io.deq.valid || hintQueue.io.count === 1.U && hintQueue.io.deq.fire
   val valid_s1 = mshr_GrantData_s1 || mshr_Grant_s1 || mshr_AccessAckData_s1 || mshr_AccessAck_s1 || mshr_CBOAck_s1 || chn_Release_s1
   val flow_s1, drop_s1, enq_s3 = Wire(Decoupled(new HintQueueEntry))
-  // noSpaceForSinkReq in GrantBuffer may ensure that these queues will not overflow
+  // GrantQueue can retire a normal D response before its hint, while matrix
+  // hints wait for MatrixDataOut.fire. Its free space cannot bound HintQueue.
   assert(enq_s3.ready || !enq_s3.valid)
 
   val hint_s1Queue = Module(new Queue(new HintQueueEntry, 4, flow = false))
+  val reservedHints = hintQueue.io.count +& hint_s1Queue.io.count +& io.pendingSinkHints
+  io.blockSinkReqEntrance := reservedHints >= hintEntries.U
+  // MSHR requests are admitted at S0. Reserve one extra slot for the MSHR
+  // already accepted into S1 (or the sink request using S1 this cycle).
+  io.blockMSHRReqEntrance := reservedHints >= (hintEntries - 1).U
   hint_s1Queue.io.enq.valid := valid_s1 && (!canFlow_s1 || !flow_s1.ready)
   hint_s1Queue.io.enq.bits  := enqBits_s1
   assert(hint_s1Queue.io.enq.ready, "hint_s1Queue should never be full")
@@ -135,10 +145,15 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   arb(Seq(enq_s3, drop_s1, flow_s1), hintQueue.io.enq, Some("Hint"))
   val matrixDataOutFire = io.matrixDataOutFire.getOrElse(false.B)
   val deqIsMatrixData = hintQueue.io.deq.valid && hintQueue.io.deq.bits.isMatrixData
-  io.matrixDataOutReady.foreach(_ := deqIsMatrixData)
+  // A directly flowed S1 hint is the head at S2. If its refill retries,
+  // MainPipe drops the response, so no MatrixDataOut handshake will retire it.
+  // Track the actual S1 enqueue: an unrelated retry must not drop an older head.
+  val matrixFlow_s2 = RegNext(flow_s1.fire && enqBits_s1.isMatrixData, false.B)
+  val cancelMatrixHint_s2 = io.retry_s2 && matrixFlow_s2
+  io.matrixDataOutReady.foreach(_ := deqIsMatrixData && !cancelMatrixHint_s2)
   val respWithDataFire = io.l1Hint.fire && io.l1Hint.bits.hasData
   val normalHintReady = io.l1Hint.ready && !RegNext(respWithDataFire, false.B)
-  hintQueue.io.deq.ready := Mux(deqIsMatrixData, matrixDataOutFire, normalHintReady)
+  hintQueue.io.deq.ready := Mux(deqIsMatrixData, matrixDataOutFire || cancelMatrixHint_s2, normalHintReady)
 
   io.l1Hint.valid := hintQueue.io.deq.valid && !hintQueue.io.deq.bits.isMatrixData &&
     !(io.retry_s2 && !hint_s1Queue.io.deq.valid) && !RegNext(respWithDataFire, false.B)
@@ -147,6 +162,7 @@ class CustomL1Hint(implicit p: Parameters) extends L2Module {
   io.l1Hint.bits.hasData := hintQueue.io.deq.bits.hasData
 
   when(matrixDataOutFire) {
-    assert(deqIsMatrixData, "MatrixDataOut fired without a matching Matrix AccessAckData hint entry")
+    assert(deqIsMatrixData && !cancelMatrixHint_s2,
+      "MatrixDataOut fired without a matching live Matrix AccessAckData hint entry")
   }
 }

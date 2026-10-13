@@ -110,6 +110,12 @@ class Slice()(implicit p: Parameters) extends BaseSlice[OuterBundle]
   reqArb.io.fromMSHRCtl := mshrCtl.io.toReqArb
   reqArb.io.fromMainPipe := mainPipe.io.toReqArb
   reqArb.io.fromGrantBuffer := grantBuf.io.toReqArb
+  reqArb.io.fromGrantBuffer.blockSinkReqEntrance.blockA_s1 :=
+    grantBuf.io.toReqArb.blockSinkReqEntrance.blockA_s1 || mainPipe.io.hintBlockSinkReqEntrance
+  reqArb.io.fromGrantBuffer.blockSinkReqEntrance.blockC_s1 :=
+    grantBuf.io.toReqArb.blockSinkReqEntrance.blockC_s1 || mainPipe.io.hintBlockSinkReqEntrance
+  reqArb.io.fromGrantBuffer.blockMSHRReqEntrance :=
+    grantBuf.io.toReqArb.blockMSHRReqEntrance || mainPipe.io.hintBlockMSHRReqEntrance
   reqArb.io.fromTXDAT := txdat.io.toReqArb
   reqArb.io.fromTXRSP := txrsp.io.toReqArb
   reqArb.io.fromTXREQ := txreq.io.toReqArb

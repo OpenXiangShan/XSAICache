@@ -51,6 +51,8 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
 
     /* handle capacity conflict of GrantBuffer */
     val status_vec_toD = Vec(3, ValidIO(new PipeStatus))
+    val hintBlockSinkReqEntrance = Output(Bool())
+    val hintBlockMSHRReqEntrance = Output(Bool())
     /* handle capacity conflict of TX channels */
     val status_vec_toTX = Vec(3, ValidIO(new PipeStatusWithCHI))
 
@@ -853,6 +855,11 @@ class MainPipe(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcode
   customL1Hint.io.mshrHintQInfo := io.mshrHintQInfo
   customL1Hint.io.sinkCHintQInfo := io.sinkCHintQInfo
   customL1Hint.io.retry_s2 := io.retryFastFwd_s2 && task_s2.valid
+  customL1Hint.io.pendingSinkHints := PopCount(Seq(task_s2, task_s3).map { t =>
+    t.valid && t.bits.fromA && !t.bits.mshrTask
+  })
+  io.hintBlockSinkReqEntrance := customL1Hint.io.blockSinkReqEntrance
+  io.hintBlockMSHRReqEntrance := customL1Hint.io.blockMSHRReqEntrance
 
   customL1Hint.io.s3.task      := task_s3
   // overwrite opcode: if sinkReq can respond, use sink_resp_s3.bits.opcode = Grant/GrantData
