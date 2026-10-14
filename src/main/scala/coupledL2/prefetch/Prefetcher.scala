@@ -266,6 +266,12 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
   val matrixPf = if (hasMatrixPrefetcher) Some(Module(new MatrixGuidedPrefetcher)) else None
 
   matrixPf.foreach { matrix =>
+    // Keep the configured engine enabled by default, but allow experiments to
+    // disable every Matrix stream, including the C-store-triggered A lookahead.
+    val matrixEnable = Constantin.createRecord(
+      s"l2_matrix_prefetch_enable${cacheParams.hartId}",
+      initValue = 1
+    ).orR
     val matrixBOnAEnable = Constantin.createRecord(
       s"l2_matrix_b_on_a_enable${cacheParams.hartId}",
       initValue = 0
@@ -274,7 +280,7 @@ class Prefetcher(implicit p: Parameters) extends PrefetchModule {
       s"l2_matrix_c_on_b_enable${cacheParams.hartId}",
       initValue = 0
     ).orR
-    matrix.io.enable := true.B
+    matrix.io.enable := matrixEnable
     matrix.io.enableBOnA := matrixBOnAEnable
     matrix.io.enableCOnB := matrixCOnBEnable
     matrix.io.control := io.matrixPrefetch.get
