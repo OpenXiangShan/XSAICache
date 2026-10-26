@@ -77,6 +77,11 @@ test-top-matrix:
 test-top-l2l3l2-openllc:
 	mill -i XSCache.testtop.openllc.runMain xscache.openLLC.TestTopOpenLLC_DualCore -td $(BUILD_DIR_LLC) --target systemverilog --split-verilog
 
+test-zhujiang-perf:
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestZhuJiangPerf
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestZhuJiangPerf --disable-perf
+	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestZhuJiangPerfCounters
+
 test-top-zhujiang-singlecore:
 	mill -i XSCache.testtop.zhujiang.runMain zhujiang.TestTopZhuJiang_SingleCore -td $(BUILD_DIR_ZJ_SINGLECORE) --target systemverilog --split-verilog
 
@@ -102,3 +107,5 @@ checkformat:
 	mill -i __.checkFormat
 
 .PHONY: init bsp checkformat clean compile-coupledl2 compile-openllc idea reformat 
+
+.PHONY: test-zhujiang-perf
