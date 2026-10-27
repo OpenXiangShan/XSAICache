@@ -15,6 +15,7 @@ import xscache.common.{AliasField, BankBitsKey, PrefetchField}
 import xscache.coupledL2.{AmeIndexField, CoupledL2, EdgeInKey, EnableL2DecoupledDownstreamCHI, EnableMatrix, L1Param, L2ParamKey, L2ToL1Hint, MatrixDataBundle, MatrixField}
 import xscache.chi.{CHIDataCheckKey, CHIIssue, CHIPoisonKey, HasCHIMsgParameters, Issue}
 import zhujiang.device.AxiDeviceParams
+import zhujiang.perf.{XiangShanUtilityPerfBackend, ZJPerfBackendKey}
 import utility.{ChiselDB, FileRegisters, LogUtilsOptions, LogUtilsOptionsKey, PerfCounterOptions, PerfCounterOptionsKey, XSLog, XSPerfLevel}
 import xs.utils.debug.{HardwareAssertionKey, HwaParams}
 import xs.utils.perf.{DebugOptions, DebugOptionsKey}
@@ -305,6 +306,7 @@ object TestTopZhuJiangConfig {
     case BankBitsKey => 0
     case MaxHartIdBits => log2Up(numCores)
     case ZJParametersKey => zjParameters
+    case ZJPerfBackendKey => XiangShanUtilityPerfBackend
     case L2ParamKey => up(L2ParamKey).copy(
       ways = 4,
       sets = 128,

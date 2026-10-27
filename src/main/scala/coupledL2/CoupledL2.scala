@@ -648,7 +648,7 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
     val mshrPCrdArbIn = mshrPCrdHits.zip(mshrPCrdArbGrants).map { case (hit, grant) =>
       val arbPort = Wire(Decoupled(new EmptyBundle))
       arbPort.valid := hit
-      grant := arbPort.ready
+      grant := arbPort.ready && hit
       arbPort
     }
     val mshrPCrdArbOut = {
