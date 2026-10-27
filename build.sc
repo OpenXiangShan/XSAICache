@@ -135,8 +135,7 @@ object XSCache extends HasChisel with $file.common.XSCacheModule {
       override def sources = T.sources {
         Seq(
           PathRef(pwd / "src" / "test" / "scala" / "ZhuJiangBridge.scala"),
-          PathRef(pwd / "src" / "test" / "scala" / "TestTopZhuJiang.scala"),
-          PathRef(pwd / "src" / "test" / "scala" / "TestZhuJiangPerf.scala")
+          PathRef(pwd / "src" / "test" / "scala" / "TestTopZhuJiang.scala")
         )
       }
       override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")

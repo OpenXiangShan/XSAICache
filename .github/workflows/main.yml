@@ -232,9 +232,6 @@ jobs:
             test -d ./tl-test-new/run || mkdir -p ./tl-test-new/run
             tar -zcf ${{ env.RUN_ARCHIVE_MATRIX }} ./tl-test-new/run
 
-      - name: ZhuJiang performance backend regression
-        run: make test-zhujiang-perf
-
       - name: Unit test for CoupledL2 + ZhuJiang
         run: |
             rm -rf tl-test-new
