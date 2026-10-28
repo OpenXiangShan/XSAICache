@@ -88,9 +88,9 @@ object openNCB extends HasChisel {
 
 object XSCache extends HasChisel with $file.common.XSCacheModule {
 
-  override def moduleDeps = super.moduleDeps ++ Seq(zhujiangCompat)
-
   override def millSourcePath = millOuterCtx.millSourcePath
+
+  override def moduleDeps = super.moduleDeps ++ Seq(zhujiangCompat)
 
   def rocketModule: ScalaModule = rocketchip
 
@@ -150,16 +150,10 @@ object zhujiangCompat extends HasChisel {
   override def millSourcePath = pwd / "ZhuJiang"
   override def moduleDeps = super.moduleDeps ++ Seq(rocketchip, utility)
   override def sources = T.sources {
-    val sourceRoots = Seq(
-      millSourcePath / "src" / "main" / "scala",
-      millSourcePath / "xs-utils" / "src" / "main" / "scala"
+    Seq(
+      PathRef(millSourcePath / "src" / "main" / "scala"),
+      PathRef(millSourcePath / "xs-utils" / "src" / "main" / "scala")
     )
-    sourceRoots
-      .flatMap(os.walk(_))
-      .filter(path => os.isFile(path) && path.ext == "scala")
-      .filterNot(_.last == "DoubleCounterClockGate.scala")
-      .map(PathRef(_)) ++
-      Seq(PathRef(pwd / "src" / "compat" / "scala" / "zhujiang" / "utils" / "DoubleCounterClockGate.scala"))
   }
   override def scalacOptions = super.scalacOptions() ++ Agg("-deprecation", "-feature")
 }
