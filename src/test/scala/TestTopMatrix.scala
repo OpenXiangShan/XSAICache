@@ -158,7 +158,7 @@ class TestTopMatrix(
 
   val bankBinders = (0 until numCores).map(_ => BankBinder(banks, 64))
 
-  l1d_nodes.zip(l2_nodes).zipWithIndex.foreach { case ((l1d, l2), i) =>
+  val mmio_nodes = l1d_nodes.zip(l2_nodes).zipWithIndex.map { case ((l1d, l2), i) =>
     val l1xbar = TLXbar()
     l1xbar :=
       TLBuffer() :=
@@ -193,6 +193,7 @@ class TestTopMatrix(
       )
     ))
     l2.mmioBridge.mmioNode := mmioClientNode
+    mmioClientNode
   }
 
   mem :=
@@ -216,6 +217,12 @@ class TestTopMatrix(
     // matrix TileLink ports.  The current matrix test target is single-core;
     // broadcast the same control bundle if this top is elaborated with more.
     val matrixPrefetch = IO(Input(new MatrixPrefetchControl))
+
+    // Expose the otherwise-dangling MMIO client port so the VCS TB can issue
+    // uncached Get/Put transactions into l2.mmioBridge.
+    mmio_nodes.zipWithIndex.foreach { case (node, i) =>
+      node.makeIOs()(ValName(s"mmio_port_$i"))
+    }
 
     val io_l1 = l2_nodes.map { l2_node =>
       IO(new Bundle {
