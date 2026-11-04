@@ -167,7 +167,8 @@ class MSHR(implicit p: Parameters) extends CoupledL2Module with HasCHIOpcodes {
   val req_putfull = req.fromA && req.opcode === PutFullData
   val req_prefetch = req.opcode === Hint
 
-  val req_mayRepl = req_acquire || req_get || req_prefetch
+  // PutFull misses also replace a victim whose state must track nested snoops/releases.
+  val req_mayRepl = req_acquire || req_get || req_prefetch || req_putfull
 
   val req_chiOpcode = req.chiOpcode.get
 
