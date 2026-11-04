@@ -143,6 +143,8 @@ class TestTopMatrix(
       writeCancelable = false,
       writeNoError = true,
       axiBurstAlwaysIncr = true,
+      // The standalone memory model also receives Device requests from the MMIO bridge.
+      acceptMemAttrDevice = true,
       chiDataCheck = EnumCHIDataCheck.OddParity
     )
   })))

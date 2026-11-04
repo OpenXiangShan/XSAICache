@@ -269,10 +269,7 @@ class MMIOBridgeEntry(edge: TLEdgeIn)(implicit p: Parameters) extends CoupledL2M
   txreq.bits.memAttr := MemAttr(
     allocate = false.B,
     cacheable = false.B,
-    // VCS testbench: the openLLC NCB upstream rejects Device MemAttr.
-    // MMIOBridge is otherwise unreachable in this top, so keep the request
-    // non-Device to let the MMIO client traffic reach the L2 bridge/entries.
-    device = false.B,
+    device = !isBackTypeMM,
     ewa = if (bufferableNC) (isPageTypeNC || isBackTypeMM) else false.B
   )
   txreq.bits.mpam.foreach(_ := MPAM(txreq.bits.ns))
