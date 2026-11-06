@@ -190,7 +190,8 @@ class TestTopMatrix(
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
-          "uncache"
+          name = "uncache",
+          sourceId = IdRange(0, 16)
         ))
       )
     ))
