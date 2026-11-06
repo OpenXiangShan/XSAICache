@@ -181,7 +181,8 @@ class TestTopOpenLLC(numCores: Int = 1, numULAgents: Int = 0, banks: Int = 1, is
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
-          "uncache"
+          name = "uncache",
+          sourceId = IdRange(0, 16)
         ))
       )
     ))

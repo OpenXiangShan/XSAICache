@@ -147,7 +147,8 @@ class TestTopZhuJiang(
     val mmioClientNode = TLClientNode(Seq(
       TLMasterPortParameters.v1(
         clients = Seq(TLMasterParameters.v1(
-          "uncache"
+          name = "uncache",
+          sourceId = IdRange(0, 16)
         ))
       )
     ))(ValName(s"mmio_dummy_$i"))
