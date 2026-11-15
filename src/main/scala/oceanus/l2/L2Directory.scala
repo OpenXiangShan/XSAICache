@@ -25,7 +25,7 @@ object L2Directory {
   // enters the TSHR, after the previous refill committed).
   // hitHold marks a reservation transferred from that refill, or created by an
   // unsatisfied initial-hit ReadUnique, MakeUnique, or StashUnique, until its
-  // final meta-only DirWb commits.
+  // final allocating DirWb commits.
   class RefillLockEntry(implicit val p: Parameters) extends Bundle with HasL2Params {
     val valid = Bool()
     val set = UInt(setBits.W)
@@ -1302,12 +1302,14 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
 
   when (grantDirWb && winReq.REPL_LOCK_RELEASE) {
     assert(dirWbHitLockRelease, "Directory: ReplLock release without matching hit-hold ownership")
-    assert(!winReq.TAG_WEN, "Directory: ReplLock release must be meta-only")
     assert(winReq.WAY === winReq.REPL_LOCK_WAY, "Directory: ReplLock release way mismatch")
+    when (winReq.TAG_WEN) {
+      assert(dirWbUnlock, "Directory: ReplLock release without final tag commit")
+    }
   }
 
   when (dirWbHitLockRelease) {
-    // The final meta write lands at this edge, so a later request can observe
+    // The final tag/meta write lands at this edge, so a later request can observe
     // the released way immediately; no delayed clear is needed for hit holds.
     lockTable(winDirWb).valid := false.B
   }

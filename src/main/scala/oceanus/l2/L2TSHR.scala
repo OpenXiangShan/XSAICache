@@ -768,6 +768,7 @@ class L2TSHR(val sliceNum: Int, val tshrId: Int)(implicit val p: Parameters) ext
   // 'wb_locked' refuses Directory Write & Data Storage Write on write-ready state
   // 'wb_cancel' drops non-arbiterated Directory Write & Data Storage write
   proxyDir.io.wb_locked := vPipeREQ.io.dir_wb_locked
+  proxyDir.io.snoop_active := snoopAgent.io.snoop_active
   proxyDS.io.wb_locked := vPipeREQ.io.ds_wb_locked
 
   vPipeREQ.io.dir_wb_accept := proxyDir.io.wb_accept

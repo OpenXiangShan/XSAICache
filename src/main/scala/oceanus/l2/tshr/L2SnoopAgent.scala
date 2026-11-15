@@ -111,6 +111,7 @@ class L2SnoopAgent(val sliceNum: Int)(implicit val p: Parameters) extends Module
     val UpRXRSP = Flipped(Valid(new FlitUpRSP))
     val UpRXDAT = Flipped(Valid(new FlitUpDAT))
 
+    val snoop_active = Output(Bool())
     val tshr_meta_write_en = Output(new L2Directory.MetaWriteMask)
     val tshr_meta_write_meta = Output(new L2Directory.Meta)
 
@@ -190,6 +191,8 @@ class L2SnoopAgent(val sliceNum: Int)(implicit val p: Parameters) extends Module
   val chooseSlotSNP = slotSNPValid && !chooseSlotREQEvict
   val chooseSlotREQ = slotREQValid && !chooseSlotSNP
   val startService = state === sIdle && !busy && (chooseSlotREQEvict || chooseSlotSNP || chooseSlotREQ)
+  io.snoop_active := io.uopFromREQ.valid || io.uopFromSNP.valid ||
+    slotREQValid || slotSNPValid || startService || busy || (state =/= sIdle)
   val startUop = Wire(new L2SnoopAgent.PathToSnoopAgent)
   startUop := Mux(chooseSlotSNP, slotSNPUop, slotREQUop)
   val startFromSNP = startService && chooseSlotSNP
