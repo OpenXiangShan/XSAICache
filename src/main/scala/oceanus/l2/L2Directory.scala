@@ -609,9 +609,39 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     abs(w - 1, 0)
   }
 
-  val winReplRd = roundRobinNext(rrReplRd, replRdVec.asUInt, nMSHR)
-  val winDirWb  = roundRobinNext(rrDirWb,  dirWbVec.asUInt,  nMSHR)
-  val winDirRd  = roundRobinNext(rrDirRd,  dirRdVec.asUInt,  nMSHR)
+  def roundRobinOneHot(last: UInt, mask: UInt, n: Int): UInt = {
+    val w = log2Ceil(n)
+    val start = Mux(last === (n - 1).U, 0.U(w.W), last + 1.U)
+    val startOneHot = UIntToOH(start, n)
+    val beforeStart = ((1.U((n + 1).W) << start) - 1.U)(n - 1, 0)
+    val upper = Mux(last === (n - 1).U, 0.U(n.W), mask & ~beforeStart)
+    val firstUpper = upper & (~upper + 1.U)
+    val firstAny = mask & (~mask + 1.U)
+    Mux(upper.orR, firstUpper, Mux(mask.orR, firstAny, startOneHot))
+  }
+
+  def oneHotToIndex(oneHot: UInt, n: Int): UInt = {
+    val w = log2Ceil(n)
+    VecInit((0 until w).map { bit =>
+      balancedOr((0 until n).filter(i => (i & (1 << bit)) != 0).map(i => oneHot(i)))
+    }).asUInt
+  }
+
+  def balancedOneHotMux(select: UInt, inputs: Seq[UInt]): UInt = {
+    require(inputs.nonEmpty)
+    require(inputs.map(_.getWidth).distinct.length == 1)
+    val width = inputs.head.getWidth
+    VecInit((0 until width).map { bit =>
+      balancedOr(inputs.indices.map(i => select(i) && inputs(i)(bit)))
+    }).asUInt
+  }
+
+  val winReplRdOH = roundRobinOneHot(rrReplRd, replRdVec.asUInt, nMSHR)
+  val winDirWbOH = roundRobinOneHot(rrDirWb, dirWbVec.asUInt, nMSHR)
+  val winDirRdOH = roundRobinOneHot(rrDirRd, dirRdVec.asUInt, nMSHR)
+  val winReplRd = oneHotToIndex(winReplRdOH, nMSHR)
+  val winDirWb = oneHotToIndex(winDirWbOH, nMSHR)
+  val winDirRd = oneHotToIndex(winDirRdOH, nMSHR)
 
   // Grantable describes the normal-group result without the DirRel class gate.
   // It includes final-commit and replacement/backing hazards so reverse-stall
@@ -640,6 +670,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val normalBlockDirRel = dirRdBlockDirRel || dirWbBlockDirRel || replRdBlockDirRel
 
   val winIdx   = Mux(grantReplRd, winReplRd, Mux(grantDirWb, winDirWb, winDirRd))
+  val winOH = Mux(grantReplRd, winReplRdOH, Mux(grantDirWb, winDirWbOH, winDirRdOH))
   val anyGrant = grantReplRd || grantDirWb || grantDirRd
   val winReq   = io.toDir(winIdx)
 
@@ -697,7 +728,10 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val isDirWb  = grantDirWb
   val isRead   = isReplRd || isDirRd
 
-  val reqSet = winReq.PADDR(offsetBits + setBits - 1, offsetBits)
+  val reqSet = balancedOneHotMux(
+    winOH,
+    io.toDir.toSeq.map(req => requestSet(req))
+  )
   val reqTag = winReq.PADDR(paramL2.physicalAddrWidth - 1, offsetBits + setBits)
 
   // Only a ReplRd CAM miss allocates an entry. S1 establishes valid/set and a
@@ -711,7 +745,9 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     replCAMMatch(requestSet(req)).orR
   })
   val s1ReplCAMMatch = replCAMMatch(reqSet)
-  val s1ReplCAMHit = requestReplCAMHitVec(winIdx)
+  val s1ReplCAMHit = balancedOr(io.toDir.indices.map { i =>
+    winOH(i) && requestReplCAMHitVec(i)
+  })
   val s1ReplCAMIndex = PriorityEncoder(s1ReplCAMMatch)
   val s1ReplCAMAlloc = isReplRd && useRRIPSram.B && !s1ReplCAMHit
   val s1ReplCAMIndexOrAlloc = Mux(s1ReplCAMHit, s1ReplCAMIndex, replCAMFreeIndex)
@@ -1168,7 +1204,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // Mixed mode needs no origin writeback because originFF is already current.
   // pendClearApply retains only the existing lock-clear timing.
   val refillLockAcquire = s3_valid && s3_isRepl && !replRetry
-  val dirWbUnlock = grantDirWb && dirWbUnlockVec(winDirWb)
+  val dirWbUnlock = grantDirWb && Mux1H(winDirWbOH, dirWbUnlockVec)
   val dirWbOwnerRetire = dirWbUnlock &&
     blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U
   val dirWbFinal = dirWbOwnerRetire && dirWbFinalVec(winDirWb)
@@ -1327,10 +1363,12 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     lockTable(winDirWb).valid := false.B
   }
 
-  val dirWbHitLockRelease = grantDirWb && winReq.REPL_LOCK_RELEASE &&
-                            lockTable(winDirWb).valid && lockTable(winDirWb).hitHold &&
-                            lockTable(winDirWb).set === reqSet &&
-                            lockTable(winDirWb).way === winReq.REPL_LOCK_WAY
+  val dirWbHitLockReleaseVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
+    val lock = lockTable(i)
+    req.REPL_LOCK_RELEASE && lock.valid && lock.hitHold &&
+      lock.set === requestSet(req) && lock.way === req.REPL_LOCK_WAY
+  })
+  val dirWbHitLockRelease = grantDirWb && Mux1H(winDirWbOH, dirWbHitLockReleaseVec)
 
   when (grantDirWb && winReq.REPL_LOCK_RELEASE) {
     assert(dirWbHitLockRelease, "Directory: ReplLock release without matching hit-hold ownership")
