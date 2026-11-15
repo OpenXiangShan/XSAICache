@@ -707,10 +707,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // allocating S3 forwards its completed row into the younger S2. Same-set
   // ReplRd requests instead remain blocked until the allocation's lock outcome
   // is visible. CAM-full and duplicate-set allocation are assertions, not stalls.
+  val requestReplCAMHitVec = VecInit(io.toDir.map { req =>
+    replCAMMatch(requestSet(req)).orR
+  })
   val s1ReplCAMMatch = replCAMMatch(reqSet)
-  val s1ReplCAMHit = s1ReplCAMMatch.orR
+  val s1ReplCAMHit = requestReplCAMHitVec(winIdx)
   val s1ReplCAMIndex = PriorityEncoder(s1ReplCAMMatch)
-  val s1ReplCAMAlloc = isReplRd && useRRIPSram.B && !replCAMMatch(reqSet).orR
+  val s1ReplCAMAlloc = isReplRd && useRRIPSram.B && !s1ReplCAMHit
   val s1ReplCAMIndexOrAlloc = Mux(s1ReplCAMHit, s1ReplCAMIndex, replCAMFreeIndex)
   if (useRRIPSram) {
     when (s1ReplCAMAlloc) {
