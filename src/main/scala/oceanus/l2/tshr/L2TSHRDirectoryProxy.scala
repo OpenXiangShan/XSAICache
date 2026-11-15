@@ -115,6 +115,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     val repl_done = Output(Bool())
     val repl_retry = Output(Bool())
 
+    val repl_lock_candidate = Input(Bool())
     val repl_lock_req = Input(Bool())
     val repl_lock_way = Input(UInt(wayBits.W))
     val repl_lock_conflict = Output(Bool())
@@ -515,6 +516,7 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
   io.toDir.RRIP_PREFETCH := io.rrip_prefetch
   io.toDir.RRIP_REFILL_PREFETCH := io.rrip_refill_prefetch
   io.toDir.ReplLock := io.repl_lock_req
+  io.toDir.ReplLockCandidate := io.repl_lock_candidate
   io.toDir.REPL_LOCK_WAY := io.repl_lock_way
   io.toDir.REPL_LOCK_RELEASE := io.repl_lock_release
   io.repl_lock_conflict := fromDir_en && io.fromDir.ReplLockConflict

@@ -143,6 +143,7 @@ object L2Directory {
     val ReplRd = Bool()
     val DirRel = Bool() // DRRIP release-type update, issued at EVT vPipe acceptance
     val ReplLock = Bool() // Fire-and-forget hit-way reservation, outside normal arbitration
+    val ReplLockCandidate = Bool()
   }
 
   class PathToDirectory(implicit val p: Parameters) extends PathToDirectoryUOPs with HasL2Params {
@@ -956,17 +957,45 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     VecInit(lockTable.map(e => e.valid && e.set === s3_set && e.way === w.U)).asUInt.orR
   }).asUInt
 
-  val replLockConflictVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
+  def balancedOr(bits: Seq[Bool]): Bool = {
+    if (bits.isEmpty) {
+      false.B
+    } else if (bits.length == 1) {
+      bits.head
+    } else {
+      val mid = bits.length / 2
+      balancedOr(bits.take(mid)) || balancedOr(bits.drop(mid))
+    }
+  }
+
+  val storedConflictVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
     val lockSet = requestSet(req)
     val lockWay = req.REPL_LOCK_WAY
-    val otherOwnerLock = VecInit(lockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
+    balancedOr(lockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
       case (entry, _) => entry.valid && entry.set === lockSet && entry.way === lockWay
-    }).asUInt.orR
-    val earlierReplLock = if (i == 0) false.B else VecInit((0 until i).map { j =>
-      val earlier = io.toDir(j)
-      earlier.ReplLock && requestSet(earlier) === lockSet && earlier.REPL_LOCK_WAY === lockWay
-    }).asUInt.orR
-    otherOwnerLock || earlierReplLock
+    })
+  })
+
+  val eligibleVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
+    req.ReplLockCandidate && !storedConflictVec(i)
+  })
+
+  val sameCycleConflictVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
+    val lockSet = requestSet(req)
+    val lockWay = req.REPL_LOCK_WAY
+    if (i == 0) {
+      false.B
+    } else {
+      balancedOr((0 until i).map { j =>
+        val earlier = io.toDir(j)
+        eligibleVec(j) && requestSet(earlier) === lockSet &&
+          earlier.REPL_LOCK_WAY === lockWay
+      })
+    }
+  })
+
+  val replLockConflictVec = VecInit(storedConflictVec.zip(sameCycleConflictVec).map {
+    case (stored, sameCycle) => stored || sameCycle
   })
 
   // A simultaneous ReplLock always wins its way against ReplRd. Other existing

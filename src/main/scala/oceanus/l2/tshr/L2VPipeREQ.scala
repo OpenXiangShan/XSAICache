@@ -94,6 +94,7 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent],
     val repl_resp = Input(new L2Directory.ReplReadResult)
     val repl_meta = Input(new L2Directory.Meta)   // victim way meta latched at ReplRdResp
 
+    val repl_lock_candidate = Output(Bool())
     val repl_lock_req = Output(Bool())
     val repl_lock_way = Output(UInt(wayBits.W))
     val repl_lock_conflict = Input(Bool())
@@ -234,6 +235,8 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent],
 
   val rxreq_hit_lock_conflict = rxreq_unsatisfied_unique &&
                                 dirResult.hit && io.repl_lock_conflict
+
+  val rxreq_hit_lock_candidate = rxreq_unsatisfied_unique && dirResult.hit
 
   val rxreq_hit_lock_accept = rxreq_unsatisfied_unique &&
                               dirResult.hit && !io.repl_lock_conflict
@@ -1884,6 +1887,7 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent],
   io.repl_en := s_repl
   io.repl_reset := rxreq_fire
 
+  io.repl_lock_candidate := rxreq_fire && rxreq_hit_lock_candidate
   io.repl_lock_req := rxreq_fire && rxreq_hit_lock_accept
   io.repl_lock_way := Mux(rxreq_fire, dirResult.way, p_hit_lock_way)
 

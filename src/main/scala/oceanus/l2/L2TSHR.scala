@@ -696,6 +696,7 @@ class L2TSHR(val sliceNum: Int, val tshrId: Int)(implicit val p: Parameters) ext
   vPipeREQ.io.repl_resp := replResult
   vPipeREQ.io.repl_meta := replResult.meta
 
+  proxyDir.io.repl_lock_candidate := vPipeREQ.io.repl_lock_candidate
   proxyDir.io.repl_lock_req := vPipeREQ.io.repl_lock_req
   proxyDir.io.repl_lock_way := vPipeREQ.io.repl_lock_way
   vPipeREQ.io.repl_lock_conflict := proxyDir.io.repl_lock_conflict
