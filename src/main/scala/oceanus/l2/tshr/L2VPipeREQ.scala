@@ -2100,9 +2100,15 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent],
   io.L2EVT_opcode.bits := evictback_txreq_opcode
   // ----------------------------------------------------------------
 
-  // -- Blocking same-PA RXSNP, on waiting of L1 CompAck
+  // A related snoop is not permitted before downstream CompAck. By then the
+  // first response has cleared w_rd_dn_comp. While the miss-prefill allocation
+  // remains pending, hold the snoop so it cannot observe the stale local I state.
+  // p_prefill_miss stays asserted through the repl_done write edge and clears
+  // only when the pending tag/meta become locally visible, allowing the queued
+  // snoop to enter with the actual state and client ownership.
   io.blockRBE.EVT := p_prefill_miss
-  io.blockRBE.SNP := w_rd_up_compack || s_repl
+  io.blockRBE.SNP := w_rd_up_compack || s_repl ||
+                     (p_prefill_miss && !w_rd_dn_comp)
   io.blockRBE.EVB := (active && !p_prefill_any) ||
                      w_s_evict_peer_unlock_dir || w_s_evict_peer_unlock_ds ||
                      w_evict_peer_commit_dir ||
