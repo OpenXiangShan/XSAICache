@@ -1002,7 +1002,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // owners keep their earlier reservation and divert a later ReplLock to prefill.
   val replLockMask_s3 = VecInit((0 until ways).map { w =>
     VecInit(io.toDir.map { req =>
-      req.ReplLock && requestSet(req) === s3_set && req.REPL_LOCK_WAY === w.U
+      req.ReplLockCandidate && requestSet(req) === s3_set && req.REPL_LOCK_WAY === w.U
     }).asUInt.orR
   }).asUInt
 
