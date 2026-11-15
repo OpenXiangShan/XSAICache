@@ -992,8 +992,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
                    else         PLRU4.getReplaceWay(s3_repl(PLRU4.nBits - 1, 0))
   val chosenWay  = Mux(hasInvalid, invalidWay, replWay)
 
+  val currentSetMatchS3 = VecInit(lockTable.map { entry =>
+    entry.valid && entry.set === s3_set
+  })
   val currentLockMask_s3 = VecInit((0 until ways).map { w =>
-    VecInit(lockTable.map(e => e.valid && e.set === s3_set && e.way === w.U)).asUInt.orR
+    VecInit(lockTable.indices.map { i =>
+      currentSetMatchS3(i) && lockTable(i).way === w.U
+    }).asUInt.orR
   }).asUInt
 
   def balancedOr(bits: Seq[Bool]): Bool = {
@@ -1039,9 +1044,12 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
 
   // A simultaneous ReplLock always wins its way against ReplRd. Other existing
   // owners keep their earlier reservation and divert a later ReplLock to prefill.
+  val rawLockSetMatchS3 = VecInit(io.toDir.map { req =>
+    req.ReplLockCandidate && requestSet(req) === s3_set
+  })
   val replLockMask_s3 = VecInit((0 until ways).map { w =>
-    VecInit(io.toDir.map { req =>
-      req.ReplLockCandidate && requestSet(req) === s3_set && req.REPL_LOCK_WAY === w.U
+    VecInit(io.toDir.indices.map { i =>
+      rawLockSetMatchS3(i) && io.toDir(i).REPL_LOCK_WAY === w.U
     }).asUInt.orR
   }).asUInt
 
