@@ -1554,8 +1554,10 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     val legacyClear = pendClearValid && pendClearIdx === i.U &&
       (blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U)
     val refillThisEntry = refillThisEntryVec(i)
-    val wbUnlockThisEntry = dirWbUnlock && winDirWbOH(i) && !effectiveLockTable(i).hitHold
-    val hitReleaseThisEntry = dirWbHitLockRelease && winDirWbOH(i)
+    val wbUnlockThisEntry = grantDirWb && winDirWbOH(i) &&
+      dirWbUnlockVec(i) && !effectiveLockTable(i).hitHold
+    val hitReleaseThisEntry = grantDirWb && winDirWbOH(i) &&
+      dirWbHitLockReleaseVec(i)
 
     when(legacyClear) {
       lock.valid := false.B
