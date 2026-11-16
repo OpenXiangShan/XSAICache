@@ -456,6 +456,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   }
   val replCAMCommitFire = WireDefault(false.B)
   val directBackingWen = WireDefault(false.B)
+  val directBackingCapture = WireDefault(false.B)
+  val readWriteHazard = WireDefault(false.B)
+  val writePending_s3 = RegInit(false.B)
+  val writePendingSet_s3 = RegInit(0.U(setBits.W))
+  val writePendingData_s3 = RegInit(0.U(replBits.W))
+  val writePendingOrigin_s3 = RegInit(0.U(ways.W))
+  val writePendingMask_s3 = RegInit(0.U(ways.W))
   val readLaunchValid_s1 = RegInit(false.B)
   val readLaunchIsRepl_s1 = RegInit(false.B)
   val readLaunchIsDirRd_s1 = RegInit(false.B)
@@ -482,7 +489,23 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val relReplCAMHit = Reg(Bool())
   // Refill lock table: one slot per TSHR, indexed directly by TSHR ID. CAM
   // ownership retires at the DirWb grant; pendClear only delays the lock clear.
+  // The pending refill bypass makes the registered commit visible before the
+  // physical table update, without overriding a newer same-slot hit lock.
   val lockTable = RegInit(VecInit(Seq.fill(nMSHR)(0.U.asTypeOf(new L2Directory.RefillLockEntry))))
+  val refillPending_s3 = RegInit(false.B)
+  val refillPendingTshr_s3 = RegInit(0.U(idxW.W))
+  val refillPendingSet_s3 = RegInit(0.U(setBits.W))
+  val refillPendingWay_s3 = RegInit(0.U(wayBits.W))
+  val refillThisEntryVec = VecInit((0 until nMSHR).map { i =>
+    refillPending_s3 && refillPendingTshr_s3 === i.U
+  })
+  val effectiveLockTable = Wire(Vec(nMSHR, new L2Directory.RefillLockEntry))
+  for (i <- 0 until nMSHR) {
+    effectiveLockTable(i).valid := refillThisEntryVec(i) || lockTable(i).valid
+    effectiveLockTable(i).hitHold := Mux(refillThisEntryVec(i), false.B, lockTable(i).hitHold)
+    effectiveLockTable(i).set := Mux(refillThisEntryVec(i), refillPendingSet_s3, lockTable(i).set)
+    effectiveLockTable(i).way := Mux(refillThisEntryVec(i), refillPendingWay_s3, lockTable(i).way)
+  }
   val pendClearValid = RegInit(false.B)
   val pendClearIdx = RegInit(0.U(idxW.W))
   val dirWbCommitBlocked = WireDefault(false.B)
@@ -539,7 +562,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val replRdVec = VecInit(io.toDir.map(req => req.ReplRd && !replCAMReadBlocked(req)))
   val dirWbVec  = VecInit(io.toDir.map(_.DirWb))
   val dirWbUnlockVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
-    val lock = lockTable(i)
+    val lock = effectiveLockTable(i)
     req.DirWb && req.TAG_WEN && lock.valid &&
       lock.set === requestSet(req) && lock.way === req.WAY(wayBits - 1, 0)
   })
@@ -603,7 +626,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
 
   // ReplRd preempts Level-2 unless starved or blocked by a replacement/CAM hazard.
   // CAM commit eligibility never stalls normal Directory operations.
-  val replRdWins = anyReplRd && !anyStarved && !replStall && !directBackingWen
+  val replRdWins = anyReplRd && !anyStarved && !replStall && !readWriteHazard
 
   // round-robin pointers
   val rrReplRd = RegInit(0.U(idxW.W))
@@ -666,7 +689,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // Full-FF DirRd must also observe every older S3 full-row update. SRAM
   // backends retain their existing CAM/direct interlocks instead of this stall.
   val normalDirRdGrantable = !replRdWins && anyLevel2 && !level2WinIsWb && anyDirRd &&
-    (useRRIPSram.B || !replStall) && !directBackingWen
+    (useRRIPSram.B || !replStall) && !readWriteHazard
   val grantReplRd = !dirRelClassBlock && normalReplRdGrantable
   val grantDirWb  = !dirRelClassBlock && normalDirWbGrantable
   val grantDirRd  = !dirRelClassBlock && normalDirRdGrantable
@@ -861,8 +884,10 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val s3_rrip_update = RegNext(s2_rrip_update, false.B)
   val s3_rrip_prefetch = RegNext(s2_rrip_prefetch, false.B)
   val s3_rrip_refill_prefetch = RegNext(s2_rrip_refill_prefetch, false.B)
+  directBackingWen := writePending_s3
+  readWriteHazard := writePending_s3 || (s3_valid && !s3_replCAMUse)
   pipelineBusy := readLaunchValid_s1 || originReadValidLaunch_s1 || originReadResponseValid_s1 ||
-    writeLaunchPending || s2_valid || s3_valid
+    writePending_s3 || writeLaunchPending || s2_valid || s3_valid
 
   when (dirRelGrant) {
     if (!paramL2.dirRelSingleCycle) {
@@ -1018,7 +1043,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val hitWay   = PriorityEncoder(hitVec)
   val blockRefillMask_s2 = Wire(UInt(ways.W))
   blockRefillMask_s2 := VecInit((0 until ways).map { w =>
-    VecInit(lockTable.map(e => e.valid && e.set === s2_set && e.way === w.U)).asUInt.orR
+    VecInit(effectiveLockTable.map(e => e.valid && e.set === s2_set && e.way === w.U)).asUInt.orR
   }).asUInt
   val freeWayMask_s2 = Wire(UInt(ways.W))
   freeWayMask_s2 := (~blockRefillMask_s2)(ways - 1, 0)
@@ -1049,12 +1074,12 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
                    else         PLRU4.getReplaceWay(s3_repl(PLRU4.nBits - 1, 0))
   val chosenWay  = Mux(hasInvalid, invalidWay, replWay)
 
-  val currentSetMatchS3 = VecInit(lockTable.map { entry =>
+  val currentSetMatchS3 = VecInit(effectiveLockTable.map { entry =>
     entry.valid && entry.set === s3_set
   })
   val currentLockMask_s3 = VecInit((0 until ways).map { w =>
-    VecInit(lockTable.indices.map { i =>
-      currentSetMatchS3(i) && lockTable(i).way === w.U
+    VecInit(effectiveLockTable.indices.map { i =>
+      currentSetMatchS3(i) && effectiveLockTable(i).way === w.U
     }).asUInt.orR
   }).asUInt
 
@@ -1072,7 +1097,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val storedConflictVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
     val lockSet = requestSet(req)
     val lockWay = req.REPL_LOCK_WAY
-    balancedOr(lockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
+    balancedOr(effectiveLockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
       case (entry, _) => entry.valid && entry.set === lockSet && entry.way === lockWay
     })
   })
@@ -1252,13 +1277,14 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   } else {
     s3_origin
   }
-  // Normal replacement updates modify state at S3; DirRel has its separate
+  // Normal replacement decisions are made at S3; DirRel has its separate
   // commit path below. A CAM-resident update writes the next row into the entry.
-  // A nonresident update writes backing directly: ReplRd replaces the full row,
-  // while a DirRd hit changes only its selected way. In mixed mode originFF is
-  // always updated directly, even when the RRPV row is CAM-resident. A retrying
-  // allocating ReplRd invalidates its new entry; a younger stale ReplRd retries,
-  // while a DirRd update can fall back to its masked direct-backing write.
+  // A nonresident update captures its complete backing bundle for the pending
+  // commit stage: ReplRd replaces the full row, while a DirRd hit changes only
+  // its selected way. In mixed mode a CAM-resident originFF update remains
+  // immediate, while a nonresident update uses the same pending stage as RRPV.
+  // A retrying allocating ReplRd invalidates its new entry; a younger stale
+  // ReplRd retries, while a DirRd update can fall back to a pending masked write.
   //
   // A same-set S2 CAM hit consumes the older S3 next-state rather than a stale
   // S1 CAM snapshot. This combinational S3-to-S2 forwarding covers an allocation
@@ -1269,24 +1295,26 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     s3_replCAMIndex === s2_replCAMIndex, replNextState, s2_repl_reg)
   s2_forwardOrigin := Mux(replWen && s3_replCAMUse && s3_set === s2_set &&
     s3_replCAMIndex === s2_replCAMIndex, nextOrigin, s2_origin_reg)
-  directBackingWen := replWen && useRRIPSram.B && !s3_replCAMUse
+  directBackingCapture := replWen && useRRIPSram.B && !s3_replCAMUse
+  writePending_s3 := directBackingCapture
   if (useRRIPSram) {
     val directWriteMask = Mux(s3_isRepl, Fill(ways, true.B), rrip_way_oh)
+    when (directBackingCapture) {
+      writePendingSet_s3 := s3_set
+      writePendingData_s3 := replNextState
+      writePendingOrigin_s3 := nextOrigin
+      writePendingMask_s3 := directWriteMask
+    }
+    writeReplBacking(writePending_s3, writePendingData_s3, writePendingSet_s3, writePendingMask_s3)
+    writeOriginBacking(writePending_s3, writePendingOrigin_s3, writePendingSet_s3, writePendingMask_s3)
     when (replWen) {
       when (s3_replCAMUse) {
         replCAM.get(s3_replCAMIndex).repl := replNextState
         if (useOriginSram) {
           replCAM.get(s3_replCAMIndex).origin.get := nextOrigin
-        }
-      }.otherwise {
-        writeReplBacking(true.B, replNextState, s3_set, directWriteMask)
-      }
-      if (useOriginSram) {
-        when (!s3_replCAMUse) {
+        } else {
           writeOriginBacking(true.B, nextOrigin, s3_set, directWriteMask)
         }
-      } else {
-        writeOriginBacking(true.B, nextOrigin, s3_set, directWriteMask)
       }
     }
     when (s3_valid && s3_isRepl && replRetry && s3_replCAMAlloc) {
@@ -1313,6 +1341,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // Mixed mode needs no origin writeback because originFF is already current.
   // pendClearApply retains only the existing lock-clear timing.
   val refillLockAcquire = s3_valid && s3_isRepl && !replRetry
+  val replLockVec = VecInit(io.toDir.map(_.ReplLock))
+  refillPending_s3 := refillLockAcquire && !replLockVec(s3_tshr)
+  when (refillLockAcquire) {
+    refillPendingTshr_s3 := s3_tshr(idxW - 1, 0)
+    refillPendingSet_s3 := s3_set
+    refillPendingWay_s3 := way_s3
+  }
   val dirWbUnlock = grantDirWb && Mux1H(winDirWbOH, dirWbUnlockVec)
   val dirWbOwnerRetire = dirWbUnlock &&
     blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U
@@ -1453,9 +1488,9 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     // slot once the previous lock is gone; the
     // slot being vacated at this same edge counts as available
     val selfClearing = pendClearApply && pendClearIdx === s3_tshr(idxW - 1, 0)
-    assert(!lockTable(s3_tshr).valid || selfClearing,
+    assert(!effectiveLockTable(s3_tshr).valid || selfClearing,
       "Directory: TSHR took a second refill lock while one is still held")
-    assert(!VecInit(lockTable.map(e => e.valid && e.set === s3_set && e.way === way_s3)).asUInt.orR,
+    assert(!VecInit(effectiveLockTable.map(e => e.valid && e.set === s3_set && e.way === way_s3)).asUInt.orR,
       "Directory: double refill lock on (set,way)")
   }
 
@@ -1464,7 +1499,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   // An older refill may still retire replCAM ownership after a same-slot
   // hit-hold handoff, but must not clear the new hold.
   val dirWbHitLockReleaseVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
-    val lock = lockTable(i)
+    val lock = effectiveLockTable(i)
     req.REPL_LOCK_RELEASE && lock.valid && lock.hitHold &&
       lock.set === requestSet(req) && lock.way === req.REPL_LOCK_WAY
   })
@@ -1482,9 +1517,9 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     val lockSet = requestSet(req)
     val lockWay = req.REPL_LOCK_WAY
     val selfClearing = pendClearApply && pendClearIdx === i.U
-    val selfCompatible = !lockTable(i).valid || selfClearing ||
-                         !lockTable(i).hitHold &&
-                         lockTable(i).set === lockSet && lockTable(i).way === lockWay
+    val selfCompatible = !effectiveLockTable(i).valid || selfClearing ||
+                         !effectiveLockTable(i).hitHold &&
+                         effectiveLockTable(i).set === lockSet && effectiveLockTable(i).way === lockWay
 
     when (req.ReplLock) {
       assert(!replLockConflictVec(i), "Directory: ReplLock conflict was not diverted to prefill")
@@ -1501,8 +1536,8 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   lockTable.zipWithIndex.foreach { case (lock, i) =>
     val legacyClear = pendClearValid && pendClearIdx === i.U &&
       (blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U)
-    val refillThisEntry = refillLockAcquire && s3_tshr === i.U
-    val wbUnlockThisEntry = dirWbUnlock && winDirWbOH(i) && !lock.hitHold
+    val refillThisEntry = refillThisEntryVec(i)
+    val wbUnlockThisEntry = dirWbUnlock && winDirWbOH(i) && !effectiveLockTable(i).hitHold
     val hitReleaseThisEntry = dirWbHitLockRelease && winDirWbOH(i)
 
     when(legacyClear) {
@@ -1511,8 +1546,8 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
 
     when(refillThisEntry) {
       lock.valid := true.B
-      lock.set := s3_set
-      lock.way := way_s3
+      lock.set := refillPendingSet_s3
+      lock.way := refillPendingWay_s3
       lock.hitHold := false.B
     }
 
@@ -1528,7 +1563,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     }
   }
 
-  lockTable.zipWithIndex.foreach { case (e, i) =>
+  effectiveLockTable.zipWithIndex.foreach { case (e, i) =>
     assert(!(e.valid && io.tshrIdle(i)),
       s"Directory: blockRefill leaked after owner MSHR retired at TSHR $i")
   }
@@ -1584,7 +1619,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     // re-synthesized per-(set,way) view of the CAM lock table (probe-only, default off)
     io.debugRetry.get.blockRefillLocked := VecInit((0 until sets).map { s =>
       VecInit((0 until ways).map { w =>
-        VecInit(lockTable.map(e => e.valid && e.set === s.U && e.way === w.U)).asUInt.orR
+        VecInit(effectiveLockTable.map(e => e.valid && e.set === s.U && e.way === w.U)).asUInt.orR
       }).asUInt
     })
     io.debugRetry.get.ageWb := ageWb
@@ -1708,7 +1743,7 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   XSPerfAccumulate("grant_dirRel",  dirRelGrant)
   XSPerfAccumulate("replStall",     replStall)
   XSPerfAccumulate("replRetry",     replRetry)
-  XSPerfAccumulate("blockRefill_locked", PopCount(lockTable.map(_.valid)))
+  XSPerfAccumulate("blockRefill_locked", PopCount(effectiveLockTable.map(_.valid)))
   XSPerfAccumulate("dirRd_hit",     s3_valid && s3_isDirRd && hit_s3)
   XSPerfAccumulate("dirRd_miss",    s3_valid && s3_isDirRd && !hit_s3)
   XSPerfAccumulate("repl_upd",      replWen)
