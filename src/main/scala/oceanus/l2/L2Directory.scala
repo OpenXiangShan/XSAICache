@@ -885,7 +885,10 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val s3_rrip_prefetch = RegNext(s2_rrip_prefetch, false.B)
   val s3_rrip_refill_prefetch = RegNext(s2_rrip_refill_prefetch, false.B)
   directBackingWen := writePending_s3
-  readWriteHazard := writePending_s3 || (s3_valid && !s3_replCAMUse)
+  // Preserve Phase 8 admission behavior during the S3 decision: only an actual
+  // backing write blocks a younger read. The pending cycle then protects the
+  // registered write launch and its read-after-write ordering.
+  readWriteHazard := writePending_s3 || directBackingCapture
   pipelineBusy := readLaunchValid_s1 || originReadValidLaunch_s1 || originReadResponseValid_s1 ||
     writePending_s3 || writeLaunchPending || s2_valid || s3_valid
 
@@ -1074,13 +1077,17 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
                    else         PLRU4.getReplaceWay(s3_repl(PLRU4.nBits - 1, 0))
   val chosenWay  = Mux(hasInvalid, invalidWay, replWay)
 
-  val currentSetMatchS3 = VecInit(effectiveLockTable.map { entry =>
-    entry.valid && entry.set === s3_set
+  val currentSetMatchS3 = VecInit(lockTable.indices.map { i =>
+    lockTable(i).valid && !refillThisEntryVec(i) && lockTable(i).set === s3_set
   })
   val currentLockMask_s3 = VecInit((0 until ways).map { w =>
-    VecInit(effectiveLockTable.indices.map { i =>
-      currentSetMatchS3(i) && effectiveLockTable(i).way === w.U
-    }).asUInt.orR
+    val tableMatch = balancedOr(lockTable.indices.map { i =>
+      currentSetMatchS3(i) && lockTable(i).way === w.U
+    })
+    val pendingMatch = refillPending_s3 &&
+      refillPendingSet_s3 === s3_set &&
+      refillPendingWay_s3 === w.U
+    tableMatch || pendingMatch
   }).asUInt
 
   def balancedOr(bits: Seq[Bool]): Bool = {
@@ -1094,12 +1101,22 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     }
   }
 
+  // Bypass the pending refill only for its physical table slot. Other entries
+  // compare directly, avoiding an effective-entry mux before every comparison.
   val storedConflictVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
     val lockSet = requestSet(req)
     val lockWay = req.REPL_LOCK_WAY
-    balancedOr(effectiveLockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
-      case (entry, _) => entry.valid && entry.set === lockSet && entry.way === lockWay
-    })
+    val tableConflict = balancedOr(
+      lockTable.zipWithIndex.filter { case (_, j) => j != i }.map {
+        case (entry, j) =>
+          entry.valid && !refillThisEntryVec(j) &&
+          entry.set === lockSet && entry.way === lockWay
+      })
+    val pendingConflict = refillPending_s3 &&
+      refillPendingTshr_s3 =/= i.U &&
+      refillPendingSet_s3 === lockSet &&
+      refillPendingWay_s3 === lockWay
+    tableConflict || pendingConflict
   })
 
   val eligibleVec = VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
