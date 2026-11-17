@@ -570,13 +570,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     req.DirWb && req.TAG_WEN && lock.valid &&
       lock.set === requestSet(req) && lock.way === req.WAY(wayBits - 1, 0)
   })
-  val dirWbReplCAMIndexVec = VecInit(io.toDir.map(req => PriorityEncoder(replCAMMatch(requestSet(req)))))
+  val requestReplCAMMatchVec = VecInit(io.toDir.map(req => replCAMMatch(requestSet(req))))
+  val dirWbReplCAMIndexVec = VecInit(requestReplCAMMatchVec.map(matches => PriorityEncoder(matches)))
   // Candidate decode precedes the winner so final-commit readiness can gate the
   // DirWb grant without a combinational path from the grant back to itself.
   val dirWbFinalVec = if (useRRIPSram) {
     VecInit(io.toDir.zipWithIndex.map { case (req, i) =>
-      val camMatch = replCAMMatch(requestSet(req))
-      dirWbUnlockVec(i) && camMatch.orR &&
+      dirWbUnlockVec(i) && requestReplCAMMatchVec(i).orR &&
         replCAM.get(dirWbReplCAMIndexVec(i)).ownerCount === 1.U
     })
   } else {
@@ -681,6 +681,9 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val winReplRd = oneHotToIndex(winReplRdOH, nMSHR)
   val winDirWb = oneHotToIndex(winDirWbOH, nMSHR)
   val winDirRd = oneHotToIndex(winDirRdOH, nMSHR)
+  val dirWbSelectedFinal = balancedOr(io.toDir.indices.map { i =>
+    winDirWbOH(i) && dirWbFinalVec(i)
+  })
 
   // Grantable describes the normal-group result without the DirRel class gate.
   // It includes final-commit and replacement/backing hazards so reverse-stall
@@ -1409,9 +1412,13 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val dirWbUnlock = grantDirWb && Mux1H(winDirWbOH, dirWbUnlockVec)
   val dirWbOwnerRetire = dirWbUnlock &&
     blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U
-  val dirWbFinal = dirWbOwnerRetire && dirWbFinalVec(winDirWb)
-  val dirWbReplCAMMatchNow = replCAMMatch(reqSet)
-  val dirWbReplCAMIndexNow = dirWbReplCAMIndexVec(winDirWb)
+  val dirWbFinal = dirWbOwnerRetire && dirWbSelectedFinal
+  val dirWbReplCAMMatchNow = VecInit((0 until nMSHR).map { camIndex =>
+    balancedOr(io.toDir.indices.map { requester =>
+      winDirWbOH(requester) && requestReplCAMMatchVec(requester)(camIndex)
+    })
+  })
+  val dirWbReplCAMIndexNow = balancedOneHotMux(winDirWbOH, dirWbReplCAMIndexVec.toSeq)
   pendClearApply := pendClearValid &&
     blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U
   if (useRRIPSram) {
@@ -1441,9 +1448,9 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
         !(s2_valid && s2_set === set) && !(s3_valid && s3_set === set) &&
         !(s4_valid && s4_set === set) && !relActive
 
-    val finalCandidateIndex = dirWbReplCAMIndexVec(winDirWb)
+    val finalCandidateIndex = dirWbReplCAMIndexNow
     val finalCandidateSet = replCAM.get(finalCandidateIndex).set
-    dirWbCommitBlocked := dirWbFinalVec(winDirWb) &&
+    dirWbCommitBlocked := dirWbSelectedFinal &&
       blockRefillFaultMode =/= L2DirectoryBlockRefillFaultMode.NeverUnlock.U &&
       !commitSafe(finalCandidateIndex, finalCandidateSet)
 
