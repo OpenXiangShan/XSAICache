@@ -786,11 +786,19 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
   val requestReplCAMHitVec = VecInit(io.toDir.map { req =>
     replCAMMatch(requestSet(req)).orR
   })
-  val s1ReplCAMMatch = replCAMMatch(reqSet)
+  // Reuse the per-requester CAM index and prepare each complete row before the
+  // winner is known. After arbitration, balanced one-hot selection replaces a
+  // selected-set CAM comparison, priority encoder, and dynamic row read.
+  val requestReplCAMReplVec = VecInit(io.toDir.indices.map { i =>
+    if (useRRIPSram) replCAM.get(dirWbReplCAMIndexVec(i)).repl else 0.U(replBits.W)
+  })
+  val requestReplCAMOriginVec = VecInit(io.toDir.indices.map { i =>
+    if (useRRIPSram && useOriginSram) replCAM.get(dirWbReplCAMIndexVec(i)).origin.get else 0.U(ways.W)
+  })
   val s1ReplCAMHit = balancedOr(io.toDir.indices.map { i =>
     winOH(i) && requestReplCAMHitVec(i)
   })
-  val s1ReplCAMIndex = PriorityEncoder(s1ReplCAMMatch)
+  val s1ReplCAMIndex = balancedOneHotMux(winOH, dirWbReplCAMIndexVec.toSeq)
   val s1ReplCAMAlloc = isReplRd && useRRIPSram.B && !s1ReplCAMHit
   val s1ReplCAMIndexOrAlloc = Mux(s1ReplCAMHit, s1ReplCAMIndex, replCAMFreeIndex)
   if (useRRIPSram) {
@@ -824,8 +832,8 @@ class Directory(implicit val p: Parameters) extends Module with HasL2Params {
     dirReadData_s2(w).meta := metaReadData_s2(w)
   }
 
-  val s1ReplCAMRepl = if (useRRIPSram) replCAM.get(s1ReplCAMIndexOrAlloc).repl else 0.U(replBits.W)
-  val s1ReplCAMOrigin = if (useOriginSram) replCAM.get(s1ReplCAMIndexOrAlloc).origin.get else 0.U(ways.W)
+  val s1ReplCAMRepl = balancedOneHotMux(winOH, requestReplCAMReplVec.toSeq)
+  val s1ReplCAMOrigin = balancedOneHotMux(winOH, requestReplCAMOriginVec.toSeq)
   val replState_s1 = Mux(s1ReplCAMHit, s1ReplCAMRepl,
     replFF.map(_(reqSet)).getOrElse(0.U(replBits.W)))
   val originState_s1 = Mux(s1ReplCAMHit && useOriginSram.B, s1ReplCAMOrigin,
