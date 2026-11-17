@@ -127,7 +127,7 @@ class DataStorageSRAM(implicit val p: Parameters) extends Module with HasL2Param
   val arrayIdx = Cat(io.req.bits.way, io.req.bits.set)
   val wen = io.req.valid &&  io.req.bits.wen
   val ren = io.req.valid && !io.req.bits.wen
-  val readFire = ren
+  val readFire = io.en && ren
 
   // ── Write path ────────────────────────────────────────────────────
   val arrayWrite = Wire(new DSECCBankBlock)
@@ -169,7 +169,7 @@ class DataStorageSRAM(implicit val p: Parameters) extends Module with HasL2Param
     VecInit(Seq.tabulate(dataBankSplit)(i =>
       arrayRead.data(encBankBits * (i + 1) - 1, encBankBits * i)
     )).map(data => cacheParams.dataCode.decode(data).error).reduce(_ | _) &&
-      RegNext(RegNext(io.req.valid && !io.req.bits.wen))
+      RegNext(RegNext(readFire))
   } else {
     false.B
   }
@@ -179,11 +179,13 @@ class DataStorageSRAM(implicit val p: Parameters) extends Module with HasL2Param
   io.debugReadFire := readFire
 
   // ── MCP2 timing-contract assertions ──────────────────────────────
-  assert(!io.en || !RegNext(io.en, false.B),
-    "DataStorageSRAM: continuous req prohibited under MCP2")
-  assert(!(RegNext(io.en && io.req.bits.wen) &&
-           (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
-    "DataStorageSRAM: wdata fails to hold for 2 cycles")
+  val pastEn = RegNext(io.en, false.B)
+  assert(!io.en || !pastEn,
+    "DataStorageSRAM: continuous SRAM enable prohibited under MCP2")
+  assert(!(pastEn && (io.req.asUInt =/= RegNext(io.req.asUInt))),
+    "DataStorageSRAM: request changed during MCP2 hold cycle")
+  assert(!(pastEn && (io.wdata.asUInt =/= RegNext(io.wdata.asUInt))),
+    "DataStorageSRAM: write data changed during MCP2 hold cycle")
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -197,15 +199,16 @@ class DataStorageSRAM(implicit val p: Parameters) extends Module with HasL2Param
 //   Level-2: DSBufRd   (higher within Level-2, age-based vs AheadRd)
 //            DSBufAheadRd
 //
-// MCP2 flow in the current functional SRAM model:
-//   cycle N:   grant → dsEn=1, req/wdata driven from winner
-//   cycle N+1: datStop_r=1 → req/wdata held from datReq_r, rdata observable
-//              for the launched read and must stay aligned with owner/way
+// MCP2 flow:
+//   cycle N:   grant → capture issuedReq_r and assert ArbComp
+//   cycle N+1: registered SRAM enable; WbComp for writes; first hold cycle
+//   cycle N+2: enable low; second hold cycle
+//   cycle N+3: RdResp / AheadRdResp with aligned owner/way/data
+//   cycle N+4: registered DSReadFSM.Done
 //
-// Response pipeline (one-to-one per TSHR):
-//   cycle N:   ArbComp  (combinational from grant)
-//   cycle N+1: WbComp   (RegNext of grantWb)
-//   cycle N+1: RdResp / AheadRdResp with aligned owner/way/data
+// Arbitration is blocked during launch. The next grant may overlap the hold
+// cycle, preserving one enabled request every two cycles. Every SRAM input
+// comes directly from a register.
 
 class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
 
@@ -236,9 +239,11 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   // MCP2 stall logic
   // ══════════════════════════════════════════════════════════════════
 
-  val anyGrant  = Wire(Bool())
-  val datStop_r = RegNext(anyGrant, false.B)
-  val canIssue  = !datStop_r
+  val anyGrant       = Wire(Bool())
+  val sramEn_r       = RegNext(anyGrant, false.B)
+  val sramReqHold_r  = RegNext(sramEn_r, false.B)
+  val sramReqValid_r = RegNext(anyGrant || sramEn_r, false.B)
+  val canIssue       = !sramEn_r
 
   // ── Decode requests (gated by canIssue) ──────────────────────────
   val wbVec      = VecInit(io.fromTSHR.map(_.DSBufWb      && canIssue))
@@ -310,8 +315,6 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   issueReq.isRead := issueReadFire
   issueReq.isRd := grantRd
   val issuedReq_r = RegEnable(issueReq, 0.U.asTypeOf(issueReq), anyGrant)
-  val heldReq = Wire(chiselTypeOf(issuedReq_r))
-  heldReq := issuedReq_r
 
   // ── Update RR state ───────────────────────────────────────────────
   when(grantWb)      { rrWb      := winWb      }
@@ -340,12 +343,12 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   // Drive physical SRAM (MCP2 contract)
   // ══════════════════════════════════════════════════════════════════
 
-  sram.io.en           := anyGrant
-  sram.io.req.valid    := anyGrant || datStop_r
-  sram.io.req.bits.way := Mux(datStop_r, heldReq.way, issueReq.way)
-  sram.io.req.bits.set := Mux(datStop_r, heldReq.set, issueReq.set)
-  sram.io.req.bits.wen := Mux(datStop_r, heldReq.wen, issueReq.wen)
-  sram.io.wdata.data   := Mux(datStop_r, heldReq.wdata, issueReq.wdata)
+  sram.io.en           := sramEn_r
+  sram.io.req.valid    := sramReqValid_r
+  sram.io.req.bits.way := issuedReq_r.way
+  sram.io.req.bits.set := issuedReq_r.set
+  sram.io.req.bits.wen := issuedReq_r.wen
+  sram.io.wdata.data   := issuedReq_r.wdata
 
   val sramReqPrev = RegNext(sram.io.req.bits)
   io.debugWinIdx := winIdx
@@ -365,12 +368,12 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   io.error := sram.io.error
 
   val sramReqHoldMismatch = sram.io.req.asUInt =/= RegNext(sram.io.req.asUInt)
-  val sramReqHoldTrigger = datStop_r && sramReqHoldMismatch
+  val sramReqHoldTrigger = sramReqHold_r && sramReqHoldMismatch
   assert(
     !sramReqHoldTrigger,
-    "DataStorage: req fails to hold for MCP2 extraHold cycle datStop_r=%d " +
+    "DataStorage: req fails to hold for MCP2 extraHold cycle hold=%d " +
       "req=0x%x prevReq=0x%x set=0x%x prevSet=0x%x way=0x%x prevWay=0x%x wen=%d prevWen=%d",
-    datStop_r,
+    sramReqHold_r,
     sram.io.req.asUInt,
     RegNext(sram.io.req.asUInt),
     sram.io.req.bits.set,
@@ -380,6 +383,8 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
     sram.io.req.bits.wen,
     sramReqPrev.wen
   )
+  assert(!(sramReqHold_r && !sram.io.req.valid),
+    "DataStorage: request valid dropped during MCP2 hold cycle")
 
   // ══════════════════════════════════════════════════════════════════
   // Response pipeline (one-to-one per TSHR)
@@ -387,16 +392,20 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
 
   val grantWb_r        = RegNext(grantWb, false.B)
   val winWb_r          = RegNext(winWb)
-  val readReqFire      = issueReadFire
+  val readReqFire      = sramEn_r && issuedReq_r.isRead
   val readReqFire_r    = RegNext(readReqFire, false.B)
-  val readReqIsRd_r    = RegEnable(issueReq.isRd, false.B, readReqFire)
-  val readReqOwner_r   = RegEnable(issueReq.owner, 0.U, readReqFire)
-  val readReqWay_r     = RegEnable(issueReq.way, 0.U, readReqFire)
+  val readReqIsRd_r    = RegEnable(issuedReq_r.isRd, false.B, readReqFire)
+  val readReqOwner_r   = RegEnable(issuedReq_r.owner, 0.U, readReqFire)
+  val readReqWay_r     = RegEnable(issuedReq_r.way, 0.U, readReqFire)
+  val readReqFire_rr   = RegNext(readReqFire_r, false.B)
+  val readReqIsRd_rr   = RegEnable(readReqIsRd_r, false.B, readReqFire_r)
+  val readReqOwner_rr  = RegEnable(readReqOwner_r, 0.U, readReqFire_r)
+  val readReqWay_rr    = RegEnable(readReqWay_r, 0.U, readReqFire_r)
 
   for (i <- 0 until nMSHR) {
     val t = io.toTSHR(i)
-    val rdRespHit = readReqFire_r && readReqIsRd_r  && (readReqOwner_r === i.U)
-    val aheadRdRespHit = readReqFire_r && !readReqIsRd_r && (readReqOwner_r === i.U)
+    val rdRespHit = readReqFire_rr && readReqIsRd_rr  && (readReqOwner_rr === i.U)
+    val aheadRdRespHit = readReqFire_rr && !readReqIsRd_rr && (readReqOwner_rr === i.U)
     t.TSHRID            := i.U
     t.DSBufWbArbComp    := false.B
     t.DSBufRdArbComp    := false.B
@@ -405,7 +414,7 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
     t.DSBufRdResp       := false.B
     t.DSBufAheadRdResp  := false.B
     t.DATA              := sram.io.rdata.data
-    t.WAY               := readReqWay_r
+    t.WAY               := readReqWay_rr
 
     // ArbComp: cycle N
     when(grantWb      && (winWb      === i.U)) { t.DSBufWbArbComp      := true.B }
@@ -415,7 +424,7 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
     // WbComp: cycle N+1
     when(grantWb_r && (winWb_r === i.U)) { t.DSBufWbComp := true.B }
 
-    // RdResp / AheadRdResp: cycle N+1
+    // RdResp / AheadRdResp: cycle N+3, two cycles after the registered launch
     when(rdRespHit) { t.DSBufRdResp := true.B }
     when(aheadRdRespHit) { t.DSBufAheadRdResp := true.B }
 
@@ -431,8 +440,8 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   }
   assert(PopCount(Seq(grantWb, grantRd, grantAheadRd)) <= 1.U,
     "DataStorage: multiple grants in same cycle")
-  assert(!(anyGrant && datStop_r),
-    "DataStorage: grant fired during MCP2 hold cycle")
+  assert(!(anyGrant && sramEn_r),
+    "DataStorage: new grant during registered SRAM launch cycle")
   assert(!(grantWb && ageRd      === MAX_AGE && anyRd),
     "DataStorage: DSBufRd starved beyond MAX_AGE")
   assert(!(grantWb && ageAheadRd === MAX_AGE && anyAheadRd),
@@ -447,8 +456,8 @@ class DataStorage(implicit val p: Parameters) extends Module with HasL2Params {
   XSPerfAccumulate("ds_grant_wb",        grantWb)
   XSPerfAccumulate("ds_grant_rd",        grantRd)
   XSPerfAccumulate("ds_grant_aheadRd",   grantAheadRd)
-  XSPerfAccumulate("ds_stall_mcp2",      datStop_r)
-  XSPerfAccumulate("ds_idle",            !anyGrant && !datStop_r)
+  XSPerfAccumulate("ds_stall_mcp2",      !canIssue)
+  XSPerfAccumulate("ds_idle",            !anyGrant && canIssue)
   XSPerfAccumulate("ds_starve_rd",       rdStarved)
   XSPerfAccumulate("ds_starve_aheadRd",  aheadRdStarved)
   XSPerfAccumulate("ds_age_rd_max",      anyRd      && ageRd      === MAX_AGE)

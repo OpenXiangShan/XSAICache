@@ -298,7 +298,18 @@ class L2TSHR(val sliceNum: Int, val tshrId: Int)(implicit val p: Parameters) ext
   val tshr_buffer_halfModified = tshr_buffer_halfWritten_0_q || tshr_buffer_halfWritten_2_q
   val tshr_buffer_modified = tshr_buffer_fullModified_q || tshr_buffer_halfModified
 
-  val tshr_buffer_wen_DS = io.fromDS.DSBufRdResp && !tshr_buffer_modified
+  val tshr_buffer_rxdat_after_ds_arb_q = RegInit(false.B)
+  when (io.fromDS.DSBufRdArbComp) {
+    tshr_buffer_rxdat_after_ds_arb_q := false.B
+  }
+  when (tshr_buffer_wen_RXDAT_0 || tshr_buffer_wen_RXDAT_2) {
+    tshr_buffer_rxdat_after_ds_arb_q := true.B
+  }
+  when (io.fromDS.DSBufRdResp || tshr_dealloc) {
+    tshr_buffer_rxdat_after_ds_arb_q := false.B
+  }
+
+  val tshr_buffer_wen_DS = io.fromDS.DSBufRdResp && !tshr_buffer_modified && !tshr_buffer_rxdat_after_ds_arb_q
 
   val tshr_buffer_wen_last = WireInit(false.B)
 
