@@ -500,10 +500,16 @@ class L2VPipeREQ(clientComponents: Seq[CCHIComponent],
   io.toSA.SnpCompAck := false.B // TODO: interact with upstream data sending
 
   io.toSA.CLIENTS := io.fromClientTable
+  io.toSA.IS_SRC_EXCLUDED := rxreq_opcode.is(
+    CCHIOpcode.ReadShared,
+    CCHIOpcode.ReadUnique,
+    CCHIOpcode.ReadOnce,
+    CCHIOpcode.MakeUnique
+  )
   val rxreq_aliasable = rxreq_readunique || rxreq_readshared || rxreq_makeunique
   io.toSA.ALIAS := Mux(rxreq_aliasable, rxreq.TagAlias, dirResult.alias)
 
-  io.toSA.isL2Evict := rxevb_evictback
+  io.toSA.IS_L2_EVICT := rxevb_evictback
 
   // waiting state transitions
   //  - SnpResp/SnpRespData0/SnpRespData2 were all allowed to be received on the same cycle of the issue of

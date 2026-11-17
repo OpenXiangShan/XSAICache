@@ -86,7 +86,8 @@ object L2SnoopAgent {
   class PathToSnoopAgent extends PathToSnoopAgentUOPs {
     val CLIENTS = Vec(1, Bool())  
     val ALIAS = UInt(2.W)
-    val isL2Evict = Bool()
+    val IS_L2_EVICT = Bool()
+    val IS_SRC_EXCLUDED = Bool()
   }
 
   class PathFromSnoopAgent extends PathFromSnoopAgentUOPs {
@@ -187,7 +188,7 @@ class L2SnoopAgent(val sliceNum: Int)(implicit val p: Parameters) extends Module
   val acceptSNP = io.uopFromSNP.valid && armedSNP
   val acceptREQ = io.uopFromREQ.valid && armedREQ
 
-  val chooseSlotREQEvict = slotREQValid && slotREQUop.isL2Evict
+  val chooseSlotREQEvict = slotREQValid && slotREQUop.IS_L2_EVICT
   val chooseSlotSNP = slotSNPValid && !chooseSlotREQEvict
   val chooseSlotREQ = slotREQValid && !chooseSlotSNP
   val startService = state === sIdle && !busy && (chooseSlotREQEvict || chooseSlotSNP || chooseSlotREQ)
@@ -205,8 +206,12 @@ class L2SnoopAgent(val sliceNum: Int)(implicit val p: Parameters) extends Module
   when (startService) {
     servicePreserveClient := startFromREQ && aliasMismatch
   }
+  val requesterMask = startUop.CLIENTS.asUInt
+  val excludeRequester = startUop.IS_SRC_EXCLUDED && !aliasMismatch
+  val snoopClients = io.tshr_dirResult.clients.asUInt &
+    ~Mux(excludeRequester, requesterMask, 0.U)
   val (startNeedSnoop, startOpcode) =
-    SnoopOpcodeDerive(intentOf(startUop), io.tshr_dirResult.state, io.tshr_dirResult.clients.asUInt, io.tshr_dirResult.hit, aliasMismatch)
+    SnoopOpcodeDerive(intentOf(startUop), io.tshr_dirResult.state, snoopClients, io.tshr_dirResult.hit, aliasMismatch)
 
   val rspMatch =
     state === sWaitCore &&
@@ -269,8 +274,8 @@ class L2SnoopAgent(val sliceNum: Int)(implicit val p: Parameters) extends Module
 
   io.dbg.slotSNPValid := slotSNPValid
   io.dbg.slotREQValid := slotREQValid
-  io.dbg.slotSNPEvict := slotSNPUop.isL2Evict
-  io.dbg.slotREQEvict := slotREQUop.isL2Evict
+  io.dbg.slotSNPEvict := slotSNPUop.IS_L2_EVICT
+  io.dbg.slotREQEvict := slotREQUop.IS_L2_EVICT
   io.dbg.slotSNPOp := Cat(slotSNPUop.SnpMakeInvalid, slotSNPUop.SnpToInvalid, slotSNPUop.SnpToShared, slotSNPUop.SnpToClean)
   io.dbg.slotREQOp := Cat(slotREQUop.SnpMakeInvalid, slotREQUop.SnpToInvalid, slotREQUop.SnpToShared, slotREQUop.SnpToClean)
   io.dbg.acceptSNP := acceptSNP
