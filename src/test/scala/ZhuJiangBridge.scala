@@ -82,7 +82,10 @@ trait HasCHIToZhuJiangBridge {
   ): Unit = {
     implicit val p: Parameters = zjParams
     require(ccNode.nodeType == NodeType.CC)
-    require(ccNode.socket == "sync")
+    require(
+      ccNode.socket == "sync" || ccNode.socket == "async",
+      "CHI bridge supports native ZhuJiang sync/async sockets, not c2c"
+    )
     require(
       chi.tx.dat.bits.dataCheck.isEmpty && chi.rx.dat.bits.dataCheck.isEmpty,
       "ZhuJiang bridge requires CHI DataCheck disabled"
