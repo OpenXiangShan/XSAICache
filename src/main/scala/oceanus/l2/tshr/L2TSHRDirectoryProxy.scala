@@ -489,12 +489,14 @@ class L2TSHRDirectoryProxy(val id: Int)(implicit val p: Parameters) extends Modu
     }
 
     dirRelIdle := state_dirRel.NotYet || state_dirRel.Done
-    dirRelActive := state_dirRel.PreArb
+    val dirWbExcludesDirRel = state_dirWrite.PreArb && !io.wb_locked
+    val dirRelSelected = state_dirRel.PreArb &&
+      !(state_dirRead.PreArb || state_dirRead.ReplPreArb || dirWbExcludesDirRel)
+    dirRelActive := dirRelSelected
     dirRelWay := pendingWay
     dirRelPrefetch := pendingPrefetch
-    io.toDir.DirRel := state_dirRel.PreArb &&
-      !(state_dirRead.PreArb || state_dirRead.ReplPreArb || state_dirWrite.PreArb)
-    io.toDir.RRIP_LOCAL_VALID := state_dirRel.PreArb && pendingLocalValid
+    io.toDir.DirRel := dirRelSelected
+    io.toDir.RRIP_LOCAL_VALID := dirRelSelected && pendingLocalValid
 
     assert(!(fromDir_DirRelArbComp && !state_dirRel.PreArb), "receiving DirRelArbComp on unexpected state (expecting PreArb)")
     assert(PopCount(state_dirRel.asUInt) <= 1.U, "multiple active states in DirRelFSM")
