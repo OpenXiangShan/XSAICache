@@ -708,6 +708,10 @@ class CoupledL2(implicit p: Parameters) extends LazyModule with HasCoupledL2Para
       io.decoupledCHI.get.tx.req <> txreq
       io.decoupledCHI.get.tx.rsp <> txrsp
       io.decoupledCHI.get.tx.dat <> txdat
+      // The decoupled path bypasses LinkMonitor's source-ID assignment.
+      io.decoupledCHI.get.tx.req.bits.srcID := io.nodeID
+      io.decoupledCHI.get.tx.rsp.bits.srcID := io.nodeID
+      io.decoupledCHI.get.tx.dat.bits.srcID := io.nodeID
       rxsnp <> io.decoupledCHI.get.rx.snp
       rxrsp <> Pipeline(io.decoupledCHI.get.rx.rsp)
       rxdat <> Pipeline(io.decoupledCHI.get.rx.dat)
